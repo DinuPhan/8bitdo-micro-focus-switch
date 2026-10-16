@@ -106,7 +106,7 @@ class ProfileConfig:
     match_class: str | None = None
     match_title: str | None = None
     turn: int = 0  # degrees: 0, 90, 180, 270
-    combo_timeout_ms: int = 40  # Window in ms to detect simultaneous combo presses before flushing solo key
+    combo_timeout_ms: int = 50  # Window in ms to detect simultaneous combo presses before flushing solo key
     buttons: dict[str, ButtonAction] = field(default_factory=dict)
     combos: dict[frozenset[str], ButtonAction] = field(default_factory=dict)
     _class_re: re.Pattern[str] | None = field(default=None, init=False, repr=False)
@@ -218,8 +218,8 @@ fallback_profile = "agy"
 # backend: "uinput" (instant <1ms host-side remapping; requires controller in factory default `ble reset` mode)
 #          "ble"    (flashes hardware profile over BLE GATT '80EL' on focus change)
 backend = "uinput"
-# combo_timeout_ms: Detection window (in ms) for simultaneous button combinations (default: 40)
-combo_timeout_ms = 40
+# combo_timeout_ms: Detection window (in ms) for simultaneous button combinations (default: 50)
+combo_timeout_ms = 50
 
 [profiles.agy]
 description = "Antigravity (agy) / Terminal Coding Profile (captured from controller)"
@@ -421,7 +421,7 @@ def load_config(path: Path | None = None) -> AppConfig:
             norm_combo = parse_combo_buttons(combo_key) if not isinstance(combo_key, frozenset) else combo_key
             combos[norm_combo] = ButtonAction.from_raw(combo_spec)
 
-        combo_timeout_ms = int(prof_data.get("combo_timeout_ms", general.get("combo_timeout_ms", 40)))
+        combo_timeout_ms = int(prof_data.get("combo_timeout_ms", general.get("combo_timeout_ms", 50)))
 
         profiles[prof_name] = ProfileConfig(
             name=prof_name,

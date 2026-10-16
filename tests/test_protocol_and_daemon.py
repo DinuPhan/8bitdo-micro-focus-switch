@@ -416,7 +416,7 @@ def test_daemon_combos_and_chording_mechanics(tmp_path: Path) -> None:
         # 3. Solo key timeout fallback: User presses L ALONE and holds it
         daemon.handle_key_event(ui, ecodes.KEY_K, 1)
         assert len(ui.events) == 0  # Buffered
-        await asyncio.sleep(0.055)  # Wait 55ms (> 40ms combo_timeout_ms)
+        await asyncio.sleep(0.065)  # Wait 65ms (> 50ms combo_timeout_ms)
 
         # Timer expired -> Solo TAB is flushed down!
         assert ui.events == [
