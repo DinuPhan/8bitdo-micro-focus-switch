@@ -252,9 +252,12 @@ You can map simultaneous button presses (chords) into hotkeys or shell commands!
 "L2+R2" = ["Ctrl", "Shift", "P"]
 ```
 
+- **Simultaneous & Hold-and-Press**: Supports both simultaneous chording (~50ms) and holding a button as a modifier (e.g. holding `L2` while tapping `LEFT`).
 - **Zero-Latency Solo Buttons**: Buttons that are not part of any combo fire immediately with `0ms` delay.
 - **Fast Tap Guarantee**: Tapping a combo button quickly will still register its solo key instantly upon release.
 - **Visual Diagram Integration**: Configured combos appear as dedicated glowing badges at the bottom of the visual keymap!
+
+> **Fun Fact**: Supporting 2-button combos expands 16 physical buttons into **136 unique actions per profile** ($\binom{16}{1} + \binom{16}{2} = 16 + 120$) — instantly outnumbering a standard 104-key desktop keyboard on a 24-gram keychain controller!
 
 ### Global Base Combos (`[profiles.global]` or `[profiles.all]`)
 
