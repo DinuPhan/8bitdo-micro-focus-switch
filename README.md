@@ -107,26 +107,74 @@ These are the primary commands you will use daily:
 # 1. Preview your key mappings as an interactive visual HUD:
 8bitdo-micro-focus-switch show
 
-# 2. Edit or customize an app profile in your editor:
-8bitdo-micro-focus-switch config agy
-8bitdo-micro-focus-switch config youtube
+# 2. Interactively bind a button by pressing your keyboard (no typing required!):
+8bitdo-micro-focus-switch bind
+8bitdo-micro-focus-switch bind agy A
+8bitdo-micro-focus-switch bind agy "L+R"
 
-# 3. Add a new app profile (e.g. Spotify, Discord, VS Code):
+# 3. Browse or search bindable keys catalog (like the 8BitDo app):
+8bitdo-micro-focus-switch keys
+8bitdo-micro-focus-switch keys volume
+
+# 4. Listen and inspect keyboard chords in real-time:
+8bitdo-micro-focus-switch record
+
+# 5. Edit or customize an app profile in your editor:
+8bitdo-micro-focus-switch config agy
 8bitdo-micro-focus-switch config spotify
 
-# 4. Reload profiles into the running daemon (zero downtime, no disconnect):
+# 6. Reload profiles into the running daemon (zero downtime, no disconnect):
 8bitdo-micro-focus-switch reload
 
-# 5. Check Hyprland focus status and connected controllers:
+# 7. Check Hyprland focus status and connected controllers:
 8bitdo-micro-focus-switch status
 
-# 6. Scan for nearby controllers:
+# 8. Scan for nearby controllers:
 8bitdo-micro-focus-switch discover
 ```
 
 ---
 
-## Customizing Mappings & Adding New Apps (`config` & `reload`)
+## Interactive Key Binder (`bind`), Recorder (`record`), & Catalog (`keys`)
+
+Never struggle to remember exact key names, scancodes, or modifier spellings:
+
+### 1. Interactive Key Binder (`bind`)
+Simply press the shortcut on your physical keyboard:
+
+```bash
+# Interactive wizard: detects active window, asks for button, and waits for keypress:
+8bitdo-micro-focus-switch bind
+
+# Bind a specific button or combo directly:
+8bitdo-micro-focus-switch bind agy A
+8bitdo-micro-focus-switch bind agy "L+R"
+```
+1. It waits: `>> Listening for keyboard input for [agy.A]... Press any key or combination (ESC to cancel):`
+2. Press `Ctrl+Shift+P` (or `Space`, `Super+K`, `PageUp`) on your keyboard.
+3. It detects the chord, saves it to `~/.config/8bitdo-micro/profiles.toml`, and sends a zero-downtime `SIGHUP` reload signal to the running daemon.
+4. **Discard with `ESC`**: Pressing `ESC` at any time immediately cancels the wait without saving any changes.
+
+### 2. Live Chord Recorder (`record`)
+Press keys on your keyboard to inspect their exact chord names and TOML representations:
+```bash
+8bitdo-micro-focus-switch record
+```
+
+### 3. Bindable Keys Catalog (`keys`)
+Just like the 8BitDo mobile app, browse all supported keys categorized into Modifiers, Navigation, Actions, Media & Volume, Function Keys, and Symbols:
+```bash
+# View complete categorized catalog:
+8bitdo-micro-focus-switch keys
+
+# Search for specific keys:
+8bitdo-micro-focus-switch keys media
+8bitdo-micro-focus-switch keys volume
+```
+
+---
+
+## Customizing Mappings in Editor (`config`)
 
 All profiles live in `~/.config/8bitdo-micro/profiles.toml`. You can manage and edit your profiles effortlessly using the `config` command:
 
@@ -151,8 +199,7 @@ All profiles live in `~/.config/8bitdo-micro/profiles.toml`. You can manage and 
 8bitdo-micro-focus-switch reload
 ```
 
-> **Automatic In-Process Reload**: When you edit profiles via `8bitdo-micro-focus-switch config`, saving and exiting your editor automatically validates syntax and sends a `SIGHUP` reload signal to the running daemon. Your controller never disconnects, and virtual keyboard grabs remain active.
-```
+> **Automatic In-Process Reload**: When you edit profiles via `8bitdo-micro-focus-switch config` or bind keys via `8bitdo-micro-focus-switch bind`, saving automatically validates syntax and sends a `SIGHUP` reload signal to the running daemon. Your controller never disconnects, and virtual keyboard grabs remain active.
 
 ### Profile Example
 

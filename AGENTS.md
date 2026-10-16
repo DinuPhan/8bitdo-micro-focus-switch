@@ -141,9 +141,24 @@ When the user asks to support a new app (e.g., *"Make a profile for Obsidian"*):
    ```bash
    8bitdo-micro-focus-switch reload
    ```
-   *(Note: Editing via `8bitdo-micro-focus-switch config` automatically reloads the running daemon when you exit the editor!)*
+   *(Note: Editing via `8bitdo-micro-focus-switch config` or binding via `bind` automatically reloads the running daemon!)*
 
-### 3.2 Testing Changes
+### 3.2 Binding Buttons Interactively or via CLI (`bind`)
+
+To bind a button or combo without manual TOML text editing:
+```bash
+# Direct binding via CLI (great for automated agent commands):
+8bitdo-micro-focus-switch bind <profile> <button> --key "Ctrl+Shift+P"
+8bitdo-micro-focus-switch bind <profile> "L+R" --key "Super+K"
+
+# Or launch interactive keyboard capture for the user:
+8bitdo-micro-focus-switch bind <profile> <button>
+
+# Browse or search catalog of bindable keys:
+8bitdo-micro-focus-switch keys [query]
+```
+
+### 3.3 Testing Changes
 
 Run the test suite to verify no regressions in parser or protocol:
 ```bash

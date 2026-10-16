@@ -27,6 +27,13 @@ from .protocol import (
     PHYSICAL_BUTTONS,
     get_builtin_hardware_preset,
 )
+from .recorder import (
+    ChordResult,
+    capture_keyboard_chord,
+    find_physical_keyboards,
+    format_keys_catalog,
+    set_profile_binding,
+)
 from .visualizer import generate_html_viewer, generate_svg_diagram
 
 UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-8bitdo-micro-uinput.rules")
@@ -382,6 +389,159 @@ def _cmd_reload(args: argparse.Namespace) -> int:
         print("  Or run in foreground:")
         print("    8bitdo-micro-focus-switch daemon")
         return 0
+
+
+async def _cmd_bind(args: argparse.Namespace) -> int:
+    cfg_path = ensure_default_config(getattr(args, "config", None))
+    cfg = load_config(cfg_path)
+
+    if getattr(args, "list_keys", False):
+        print(format_keys_catalog())
+        return 0
+
+    # 1. Determine profile
+    target_profile = getattr(args, "profile", None)
+    if not target_profile:
+        try:
+            active_win = await query_active_window()
+            if active_win and (active_win.window_class or active_win.window_title):
+                matched = cfg.resolve_profile_for_window(active_win.window_class, active_win.window_title)
+                target_profile = matched.name
+                print(f"Focused Window: {active_win.window_class!r} -> Profile: {target_profile!r}")
+        except Exception:
+            pass
+
+    if not target_profile:
+        target_profile = cfg.fallback_profile or next(iter(cfg.profiles.keys()), "default")
+
+    if target_profile not in cfg.profiles:
+        print(f"Error: Profile {target_profile!r} not found in {cfg_path}.", file=sys.stderr)
+        print(f"Configured profiles: {', '.join(cfg.profiles.keys())}", file=sys.stderr)
+        return 1
+
+    # 2. Determine target button or combo
+    target_btn = getattr(args, "button", None)
+    if not target_btn:
+        if not sys.stdin.isatty():
+            print("Error: Button or combo name required in non-interactive session.", file=sys.stderr)
+            return 1
+        print(f"\nRemapping profile [{target_profile}]:")
+        print("  Buttons: A, B, X, Y, L, R, L2, R2, SELECT, START, STAR, HOME, UP, DOWN, LEFT, RIGHT")
+        print("  Combos : E.g. 'L+R', 'L2+LEFT', 'Select+Start'")
+        print("  Catalog: Type '?' to browse bindable keys")
+        try:
+            btn_input = input("\nEnter button or combo to bind: ").strip()
+            if btn_input in ("?", "help", "list"):
+                print()
+                print(format_keys_catalog())
+                btn_input = input("\nEnter button or combo to bind: ").strip()
+            if not btn_input:
+                print("Aborted.")
+                return 0
+            target_btn = btn_input
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            return 130
+
+    # 3. Determine keys to bind
+    key_arg = getattr(args, "key", None)
+    if key_arg:
+        if key_arg.startswith("exec:"):
+            keys = [key_arg]
+        elif "+" in key_arg and not key_arg.startswith("KEY_"):
+            keys = [k.strip() for k in key_arg.split("+") if k.strip()]
+        else:
+            keys = [key_arg.strip()]
+    else:
+        print(f"\n>> Listening for keyboard input for [{target_profile}.{target_btn}]...")
+        print(">> Press any key or combination on your keyboard (e.g. Space, Ctrl+Shift+P, Super+K).")
+        print(">> Press ESC to cancel.")
+        try:
+            res = capture_keyboard_chord()
+        except RuntimeError as err:
+            print(f"\n⚠️  {err}\n", file=sys.stderr)
+            if sys.stdin.isatty():
+                try:
+                    manual = input("Enter key or chord manually (e.g. Space, Ctrl+Shift+P): ").strip()
+                    if not manual:
+                        return 0
+                    keys = [manual]
+                except (EOFError, KeyboardInterrupt):
+                    return 130
+            else:
+                return 1
+        else:
+            if res.cancelled:
+                print("\n[ESC pressed] Cancelled. No changes made.")
+                return 0
+            keys = res.keys
+
+    if not keys:
+        print("No keys captured. Aborted.")
+        return 0
+
+    try:
+        set_profile_binding(cfg_path, target_profile, target_btn, keys)
+    except Exception as exc:
+        print(f"Error saving binding: {exc}", file=sys.stderr)
+        return 1
+
+    keys_disp = " + ".join(keys) if len(keys) > 1 else keys[0]
+    print(f"\n✓ Bound [{target_profile}] {target_btn} = {keys_disp}")
+    print(f"✓ Saved to {cfg_path}")
+
+    success, msg = reload_running_daemon()
+    if success:
+        print(f"✓ {msg}")
+
+    return 0
+
+
+def _cmd_record(args: argparse.Namespace) -> int:
+    timeout = getattr(args, "timeout", None)
+    print("=== 8BitDo Micro Live Keyboard Chord Recorder ===")
+    print("Press any key or combination on your keyboard to inspect its chord name and TOML format.")
+    print("Press ESC to exit.\n")
+
+    try:
+        devices = find_physical_keyboards()
+    except Exception as exc:
+        print(f"Error accessing keyboards: {exc}", file=sys.stderr)
+        return 1
+
+    if not devices:
+        print(
+            "Error: No accessible physical keyboards found in /dev/input/event*.\n"
+            "Ensure you have read permissions on /dev/input (member of group 'input').\n"
+            "Run: 8bitdo-micro-focus-switch install-udev",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        while True:
+            res = capture_keyboard_chord(devices=devices, timeout=timeout)
+            if res.cancelled:
+                print("\n[ESC pressed] Exited.")
+                break
+            chord_str = " + ".join(res.keys)
+            toml_str = res.toml_value
+            print(f"  • Captured: {chord_str:<24} -->  TOML: {toml_str}")
+    except KeyboardInterrupt:
+        print("\nExited.")
+    finally:
+        for d in devices:
+            try:
+                d.close()
+            except Exception:
+                pass
+    return 0
+
+
+def _cmd_keys(args: argparse.Namespace) -> int:
+    query = getattr(args, "query", None)
+    print(format_keys_catalog(query))
+    return 0
 
 
 def find_profile_line_number(config_path: Path, profile_name: str) -> int | None:
@@ -845,6 +1005,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not launch editor after creating/validating profile (useful for scripts)",
     )
 
+    # bind
+    p_bind = sub.add_parser(
+        "bind",
+        parents=[common_parser],
+        help="[Daily] Interactively bind a button or combo by pressing keys on your keyboard (ESC cancels)",
+    )
+    p_bind.add_argument("profile", nargs="?", help="Profile name (e.g. 'agy', 'youtube'). Defaults to focused window.")
+    p_bind.add_argument("button", nargs="?", help="Button (e.g. 'A', 'L1', 'X') or combo (e.g. 'L+R', 'Select+Start').")
+    p_bind.add_argument("--key", help="Specify key name or chord to bind directly without waiting for keypress")
+    p_bind.add_argument("--list-keys", action="store_true", help="Display catalog of all bindable keys and exit")
+
+    # record / listen
+    p_rec = sub.add_parser(
+        "record",
+        aliases=["listen", "capture"],
+        parents=[common_parser],
+        help="[Daily] Listen and inspect keyboard chords and their TOML representation (ESC exits)",
+    )
+    p_rec.add_argument("--timeout", type=float, default=None, help="Optional timeout in seconds")
+
+    # keys / catalog
+    p_keys = sub.add_parser(
+        "keys",
+        aliases=["list-keys", "catalog"],
+        parents=[common_parser],
+        help="[Daily] Display or search catalog of all bindable keys (Letters, Modifiers, Media, etc.)",
+    )
+    p_keys.add_argument("query", nargs="?", help="Optional keyword filter (e.g. 'volume', 'media', 'nav')")
+
     # reload
     sub.add_parser(
         "reload",
@@ -936,6 +1125,12 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_cmd_show(args))
         if args.command in ("config", "edit", "init-config"):
             return _cmd_config(args)
+        if args.command == "bind":
+            return asyncio.run(_cmd_bind(args))
+        if args.command in ("record", "listen", "capture"):
+            return _cmd_record(args)
+        if args.command in ("keys", "list-keys", "catalog"):
+            return _cmd_keys(args)
         if args.command == "reload":
             return _cmd_reload(args)
         if args.command == "install-service":

@@ -535,5 +535,124 @@ def test_cli_reload_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ca
     assert "Daemon is not currently running." in out
 
 
+def test_chord_recorder_state_machine() -> None:
+    from eightbitdo_micro_focus_switch.recorder import ChordRecorder
+
+    # 1. Non-modifier single press
+    rec1 = ChordRecorder()
+    assert rec1.process_event(ecodes.KEY_A, 2) is None  # repeat ignored
+    res1 = rec1.process_event(ecodes.KEY_SPACE, 1)
+    assert res1 is not None
+    assert res1.keys == ["Space"]
+    assert res1.cancelled is False
+
+    # 2. Modifiers + key chord (Ctrl + Shift + P)
+    rec2 = ChordRecorder()
+    assert rec2.process_event(ecodes.KEY_LEFTCTRL, 1) is None
+    assert rec2.process_event(ecodes.KEY_LEFTSHIFT, 1) is None
+    res2 = rec2.process_event(ecodes.KEY_P, 1)
+    assert res2 is not None
+    assert res2.keys == ["Ctrl", "Shift", "P"]
+    assert res2.cancelled is False
+
+    # 3. Solo modifier tap & release (Super key)
+    rec3 = ChordRecorder()
+    assert rec3.process_event(ecodes.KEY_LEFTMETA, 1) is None
+    res3 = rec3.process_event(ecodes.KEY_LEFTMETA, 0)
+    assert res3 is not None
+    assert res3.keys == ["Super"]
+    assert res3.cancelled is False
+
+    # 4. ESC key cancels immediately
+    rec4 = ChordRecorder()
+    assert rec4.process_event(ecodes.KEY_LEFTALT, 1) is None
+    res4 = rec4.process_event(ecodes.KEY_ESC, 1)
+    assert res4 is not None
+    assert res4.cancelled is True
+
+
+def test_keys_catalog_formatting() -> None:
+    from eightbitdo_micro_focus_switch.recorder import format_keys_catalog, get_bindable_keys_catalog
+
+    cat = get_bindable_keys_catalog()
+    assert "Modifiers" in cat
+    assert "Media & Volume" in cat
+    assert "VolumeUp" in cat["Media & Volume"]
+
+    text_all = format_keys_catalog()
+    assert "Bindable Keys Catalog" in text_all
+    assert "PlayPause" in text_all
+
+    text_filtered = format_keys_catalog("volume")
+    assert "VolumeUp" in text_filtered
+    assert "PlayPause" in text_filtered  # in Media & Volume
+    assert "Digits" not in text_filtered
+
+
+def test_cli_bind_and_keys_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from eightbitdo_micro_focus_switch.cli import main
+    from eightbitdo_micro_focus_switch.recorder import ChordResult
+
+    test_cfg = tmp_path / "profiles.toml"
+    test_cfg.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "eightbitdo_micro_focus_switch.cli.reload_running_daemon",
+        lambda: (True, "Sent reload signal (SIGHUP)"),
+    )
+
+    # 1. `keys` command
+    rc = main(["keys", "media"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Media & Volume" in out
+
+    # 2. `bind --list-keys`
+    rc = main(["--config", str(test_cfg), "bind", "--list-keys"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Bindable Keys Catalog" in out
+
+    # 3. Direct bind with --key
+    rc = main(["--config", str(test_cfg), "bind", "agy", "A", "--key", "Space"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Bound [agy] A = Space" in out
+    loaded = load_config(test_cfg)
+    assert loaded.profiles["agy"].buttons["A"].keys == ("SPACE",)
+
+    # 4. Direct bind combo with --key
+    rc = main(["--config", str(test_cfg), "bind", "agy", "L+R", "--key", "Super+K"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Bound [agy] L+R = Super + K" in out
+    loaded = load_config(test_cfg)
+    combo = loaded.profiles["agy"].combos[frozenset({"L", "R"})]
+    assert combo.keys == ("SUPER", "K")
+
+    # 5. Interactive bind mocked with captured chord
+    monkeypatch.setattr(
+        "eightbitdo_micro_focus_switch.cli.capture_keyboard_chord",
+        lambda: ChordResult(keys=["Ctrl", "Shift", "P"], cancelled=False),
+    )
+    rc = main(["--config", str(test_cfg), "bind", "agy", "Y"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Bound [agy] Y = Ctrl + Shift + P" in out
+    loaded = load_config(test_cfg)
+    assert loaded.profiles["agy"].buttons["Y"].keys == ("CTRL", "SHIFT", "P")
+
+    # 6. Interactive bind cancelled with ESC
+    monkeypatch.setattr(
+        "eightbitdo_micro_focus_switch.cli.capture_keyboard_chord",
+        lambda: ChordResult(cancelled=True),
+    )
+    rc = main(["--config", str(test_cfg), "bind", "agy", "B"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Cancelled. No changes made." in out
+
+
+
 
 
