@@ -228,6 +228,41 @@ WantedBy=default.target
     return 0
 
 
+def _cmd_install_udev(args: argparse.Namespace) -> int:
+    uinput_ok, msg = check_uinput_access()
+    if uinput_ok:
+        print("✓ /dev/uinput is already accessible and writable by your user!")
+        return 0
+
+    print("=== 8BitDo Micro udev Setup ===")
+    print(f"Target rule path : {UDEV_RULE_PATH}")
+    print(f"Rule content     : {UDEV_RULE_CONTENT.strip()}\n")
+    print("Attempting to write udev rule with sudo...")
+
+    cmd = (
+        f"echo '{UDEV_RULE_CONTENT.strip()}' | sudo tee {UDEV_RULE_PATH} > /dev/null "
+        "&& sudo udevadm control --reload-rules "
+        "&& sudo udevadm trigger /dev/uinput"
+    )
+    try:
+        res = subprocess.run(["sudo", "sh", "-c", cmd])
+        if res.returncode == 0:
+            ok, msg = check_uinput_access()
+            if ok:
+                print("\n✓ Successfully granted /dev/uinput permissions to group 'input'!")
+                return 0
+            else:
+                print(f"\nRule installed, but: {msg}")
+                return 0
+    except Exception as exc:
+        print(f"Failed to invoke sudo: {exc}")
+
+    print("\nPlease run the following command in your terminal with sudo:")
+    print(f"  echo '{UDEV_RULE_CONTENT.strip()}' | sudo tee {UDEV_RULE_PATH}")
+    print("  sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput")
+    return 1
+
+
 def find_profile_line_number(config_path: Path, profile_name: str) -> int | None:
     """Find the 1-indexed line number where [profiles.<name>] is defined in config."""
     norm = profile_name.strip().lower()
@@ -691,6 +726,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Backend flag to bake into the systemd service",
     )
 
+    # install-udev
+    sub.add_parser("install-udev", help="Grant input group write access to /dev/uinput via udev rule")
+
     # show / hud / diagram
     p_show = sub.add_parser(
         "show",
@@ -759,6 +797,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_config(args)
         if args.command == "install-service":
             return _cmd_install_service(args)
+        if args.command == "install-udev":
+            return _cmd_install_udev(args)
         if args.command == "status":
             return asyncio.run(_cmd_status(args))
         if args.command == "daemon":
