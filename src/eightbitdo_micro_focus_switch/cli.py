@@ -52,7 +52,25 @@ def _format_profile_table(config_path: Path) -> str:
         "",
         "Available Profiles:",
     ]
+    if cfg.global_combos:
+        combo_parts = [
+            f"{'+'.join(sorted(c))} -> {'+'.join(act.keys) if act.keys else act.exec_cmd}"
+            for c, act in cfg.global_combos.items()
+        ]
+        lines.append("Global Combos (inherited by all profiles by default):")
+        lines.append(f"  {', '.join(combo_parts)}")
+        lines.append("")
+
     for name, prof in cfg.profiles.items():
+        if name in ("global", "all"):
+            lines.append(f"  - {name:<12} (global base template: inherited by all profiles)")
+            if prof.combos:
+                combo_parts = [
+                    f"{'+'.join(sorted(c))} -> {'+'.join(act.keys) if act.keys else act.exec_cmd}"
+                    for c, act in prof.combos.items()
+                ]
+                lines.append(f"      Combos: {', '.join(combo_parts)}")
+            continue
         match_parts: list[str] = []
         if prof.match_class:
             match_parts.append(f"class~={prof.match_class!r}")
@@ -547,7 +565,7 @@ def _cmd_keys(args: argparse.Namespace) -> int:
 def find_profile_line_number(config_path: Path, profile_name: str) -> int | None:
     """Find the 1-indexed line number where [profiles.<name>] is defined in config."""
     norm = profile_name.strip().lower()
-    pattern = re.compile(rf"^\s*\[profiles\.{re.escape(norm)}\]\s*$", re.IGNORECASE)
+    pattern = re.compile(rf"^\s*\[(?:profiles\.)?{re.escape(norm)}\]\s*$", re.IGNORECASE)
     try:
         content = config_path.read_text(encoding="utf-8")
         for idx, line in enumerate(content.splitlines(), start=1):
@@ -644,7 +662,22 @@ def _cmd_config(args: argparse.Namespace) -> int:
                         print("\nAborted.")
                         return 130
 
-                template = f"""
+                if norm_name in ("global", "all"):
+                    template = f"""
+# -----------------------------------------------------------------------------
+# Global Base Profile: {norm_name.upper()}
+# Combos and buttons defined here apply to ALL profiles by default.
+# If an individual app profile defines its own combo, that profile takes precedence.
+# -----------------------------------------------------------------------------
+[profiles.{norm_name}]
+description = "Global defaults inherited by all profiles unless overridden"
+
+[profiles.{norm_name}.combos]
+"L+R" = ["Super", "K"]               # L1 + R1 -> Super + K (Application launcher)
+"Select+Start" = "exec:hyprctl dispatch togglespecialworkspace"
+"""
+                else:
+                    template = f"""
 # -----------------------------------------------------------------------------
 # Profile: {norm_name.upper()}
 # -----------------------------------------------------------------------------

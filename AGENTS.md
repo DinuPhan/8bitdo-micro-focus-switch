@@ -101,7 +101,17 @@ Agents can configure simultaneous multi-button chords under `[profiles.<name>.co
 - Aliases like `"L1+R1"` are automatically normalized to canonical `"L+R"`.
 - Zero latency is preserved on buttons not part of any combo.
 
-### 2.4 Supported Key Names
+### 2.4 Global Base Template (`[profiles.global]` or `[profiles.all]`)
+
+Combos and buttons defined under `[profiles.global]` (or `[profiles.all]`) apply to ALL profiles by default. If an app-specific profile defines its own combo, that profile's combo overrides the global default:
+
+```toml
+[profiles.global.combos]
+"L+R" = ["Super", "K"]               # Available in all apps
+"Select+Start" = "exec:hyprctl dispatch togglespecialworkspace"
+```
+
+### 2.5 Supported Key Names
 
 Friendly names are automatically mapped to Linux evdev codes and USB HID codes:
 - **Modifiers**: `Ctrl` (`LeftCtrl`), `Shift` (`LeftShift`), `Alt` (`LeftAlt`), `Super` (`LeftMeta`)

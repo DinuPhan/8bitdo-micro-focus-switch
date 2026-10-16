@@ -179,14 +179,21 @@ class AppConfig:
     fallback_profile: str = "default"
     backend: str = "uinput"  # "uinput" (instant evdev+uinput) or "ble" (BLE GATT hardware reflash)
     profiles: dict[str, ProfileConfig] = field(default_factory=dict)
+    global_combos: dict[frozenset[str], ButtonAction] = field(default_factory=dict)
+    global_buttons: dict[str, ButtonAction] = field(default_factory=dict)
 
     def resolve_profile_for_window(self, window_class: str, window_title: str) -> ProfileConfig:
         """Return the first matching profile for (window_class, window_title), or the fallback profile."""
         for prof in self.profiles.values():
+            if prof.name in ("global", "all"):
+                continue
             if prof.matches_window(window_class, window_title):
                 return prof
-        if self.fallback_profile in self.profiles:
+        if self.fallback_profile in self.profiles and self.fallback_profile not in ("global", "all"):
             return self.profiles[self.fallback_profile]
+        for prof in self.profiles.values():
+            if prof.name not in ("global", "all"):
+                return prof
         return next(iter(self.profiles.values()))
 
     def get_profile(self, name: str) -> ProfileConfig:
@@ -220,6 +227,18 @@ fallback_profile = "agy"
 backend = "uinput"
 # combo_timeout_ms: Detection window (in ms) for simultaneous button combinations (default: 50)
 combo_timeout_ms = 50
+
+# =============================================================================
+# Global Base Profile ('global' or 'all')
+# Combos and buttons defined here apply to ALL profiles by default.
+# If an individual app profile defines its own combo, that profile takes precedence.
+# =============================================================================
+[profiles.global]
+description = "Global shortcuts inherited by all profiles unless overridden"
+
+[profiles.global.combos]
+"L+R" = ["Super", "K"]               # L1 + R1 -> Super + K (Command palette / app launcher)
+"Select+Start" = "exec:hyprctl dispatch togglespecialworkspace"
 
 [profiles.agy]
 description = "Antigravity (agy) / Terminal Coding Profile (captured from controller)"
@@ -444,8 +463,53 @@ def load_config(path: Path | None = None) -> AppConfig:
                 description=f"Built-in {builtin_name} preset",
             )
 
+    # Check for global base template profile ('global' or 'all') or top-level [global]
+    global_combos: dict[frozenset[str], ButtonAction] = {}
+    global_buttons: dict[str, ButtonAction] = {}
+
+    # 1. From [profiles.global] or [profiles.all]
+    for g_name in ("global", "all"):
+        if g_name in profiles:
+            g_prof = profiles[g_name]
+            for c, act in g_prof.combos.items():
+                global_combos.setdefault(c, act)
+            for b, act in g_prof.buttons.items():
+                global_buttons.setdefault(b, act)
+
+    # 2. Also support top-level [global] or [all] tables
+    for g_key in ("global", "all"):
+        g_data = raw.get(g_key, {})
+        if isinstance(g_data, dict):
+            for c_k, c_v in g_data.get("combos", {}).items():
+                try:
+                    c_norm = parse_combo_buttons(c_k)
+                    global_combos.setdefault(c_norm, ButtonAction.from_raw(c_v))
+                except ValueError:
+                    pass
+            for b_k, b_v in g_data.get("buttons", {}).items():
+                try:
+                    b_norm = normalize_button_name(b_k)
+                    global_buttons.setdefault(b_norm, ButtonAction.from_raw(b_v))
+                except ValueError:
+                    pass
+
+    # 3. Inherit global defaults into all profiles (profile-specific bindings take precedence)
+    for p_name, p_prof in profiles.items():
+        if p_name in ("global", "all"):
+            continue
+        # Inherit combos
+        for c, act in global_combos.items():
+            if c not in p_prof.combos:
+                p_prof.combos[c] = act
+        # Inherit buttons
+        for b, act in global_buttons.items():
+            if b not in p_prof.buttons:
+                p_prof.buttons[b] = act
+
     return AppConfig(
         fallback_profile=fallback_profile,
         backend=backend,
         profiles=profiles,
+        global_combos=global_combos,
+        global_buttons=global_buttons,
     )

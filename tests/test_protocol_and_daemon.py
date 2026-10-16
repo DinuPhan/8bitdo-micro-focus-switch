@@ -653,6 +653,67 @@ def test_cli_bind_and_keys_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert "Cancelled. No changes made." in out
 
 
+def test_global_profile_combo_and_button_inheritance(tmp_path: Path) -> None:
+    test_cfg = tmp_path / "profiles.toml"
+    content = """\
+[general]
+fallback_profile = "agy"
+
+[profiles.global]
+description = "Global defaults"
+
+[profiles.global.combos]
+"L+R" = ["Super", "K"]
+"Select+Start" = "exec:notify-send Hello"
+
+[profiles.global.buttons]
+STAR = "Mute"
+
+[profiles.agy]
+description = "AGY"
+match_class = "ghostty"
+
+[profiles.agy.combos]
+"L2+Left" = ["LEFTMETA", "LEFT"]
+
+[profiles.youtube]
+description = "YouTube"
+match_class = "firefox"
+
+[profiles.youtube.combos]
+"L+R" = ["F"]  # Profile-specific override!
+"""
+    test_cfg.write_text(content, encoding="utf-8")
+    cfg = load_config(test_cfg)
+
+    # 1. Global combos recorded in AppConfig
+    assert frozenset({"L", "R"}) in cfg.global_combos
+    assert frozenset({"SELECT", "START"}) in cfg.global_combos
+
+    # 2. agy inherits L+R and Select+Start, and keeps its own L2+Left
+    agy = cfg.profiles["agy"]
+    assert frozenset({"L", "R"}) in agy.combos
+    assert agy.combos[frozenset({"L", "R"})].keys == ("SUPER", "K")
+    assert frozenset({"SELECT", "START"}) in agy.combos
+    assert agy.combos[frozenset({"SELECT", "START"})].exec_cmd == "notify-send Hello"
+    assert frozenset({"L2", "LEFT"}) in agy.combos
+
+    # 3. agy inherits STAR button
+    assert agy.buttons["STAR"].keys == ("MUTE",)
+
+    # 4. youtube overrides L+R with "F", while still inheriting Select+Start
+    yt = cfg.profiles["youtube"]
+    assert yt.combos[frozenset({"L", "R"})].keys == ("F",)
+    assert frozenset({"SELECT", "START"}) in yt.combos
+
+    # 5. Window resolution never matches 'global'
+    matched = cfg.resolve_profile_for_window("ghostty", "")
+    assert matched.name == "agy"
+    unmatched = cfg.resolve_profile_for_window("random_app", "")
+    assert unmatched.name != "global"
+
+
+
 
 
 

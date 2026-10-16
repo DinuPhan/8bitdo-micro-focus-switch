@@ -256,6 +256,23 @@ You can map simultaneous button presses (chords) into hotkeys or shell commands!
 - **Fast Tap Guarantee**: Tapping a combo button quickly will still register its solo key instantly upon release.
 - **Visual Diagram Integration**: Configured combos appear as dedicated glowing badges at the bottom of the visual keymap!
 
+### Global Base Combos (`[profiles.global]` or `[profiles.all]`)
+
+Want a combo to work everywhere across all apps without copy-pasting it into every profile? Define it under `[profiles.global.combos]` (or `[profiles.all.combos]`):
+
+```toml
+[profiles.global.combos]
+"L+R" = ["Super", "K"]               # L1 + R1 -> Super + K (Works in every app!)
+"Select+Start" = "exec:hyprctl dispatch togglespecialworkspace"
+```
+
+- **Inherited by Default**: All profiles (`agy`, `anki`, `youtube`, `browser`, etc.) automatically inherit these combos.
+- **Profile Overrides Take Precedence**: If an individual profile defines its own combo (e.g., `[profiles.youtube.combos] "L+R" = "F"`), that specific profile's combo takes precedence over the global default.
+- **Quick CLI Binding**: You can bind global combos directly:
+  ```bash
+  8bitdo-micro-focus-switch bind global "L+R"
+  ```
+
 > **Hardware vs. Software Mode**: Multi-button combos run seamlessly in software daemon mode (`uinput`). The 8BitDo Micro microcontroller's onboard memory only holds 18 single-button slots, so BLE GATT hardware reflash only stores single button mappings.
 
 ---

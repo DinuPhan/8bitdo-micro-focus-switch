@@ -421,7 +421,12 @@ def update_toml_binding(
     p_header = re.compile(rf"^[ \t]*\[profiles\.{re.escape(profile)}\][ \t]*$", re.MULTILINE | re.IGNORECASE)
     m = p_header.search(content)
     if not m:
-        raise ValueError(f"Profile {profile!r} not found in configuration")
+        if profile.lower() in ("global", "all"):
+            header_insert = f"\n[profiles.{profile}]\ndescription = 'Global base template inherited by all profiles'\n"
+            content = content.rstrip() + "\n" + header_insert
+            m = p_header.search(content)
+        if not m:
+            raise ValueError(f"Profile {profile!r} not found in configuration")
     p_start = m.start()
 
     # 2. Find next profile or general section (end of current profile block)
