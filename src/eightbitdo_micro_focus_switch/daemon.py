@@ -98,6 +98,8 @@ class FocusSwitchDaemon:
         self._active_combos: dict[frozenset[str], ButtonAction] = {}
         # Physical evdev keycode -> active combo button set
         self._held_combos: dict[int, frozenset[str]] = {}
+        # Physical evdev keycode -> currently physically depressed button name (for hold-and-press chords)
+        self._physical_held_buttons: dict[int, str] = {}
         self._ble_trigger = asyncio.Event()
 
     def reload_config(self) -> None:
@@ -106,6 +108,10 @@ class FocusSwitchDaemon:
             logger.warning("Cannot reload configuration: config_path not provided to daemon.")
             return
         try:
+            import importlib
+            import sys
+            if "eightbitdo_micro_focus_switch.config" in sys.modules:
+                importlib.reload(sys.modules["eightbitdo_micro_focus_switch.config"])
             from .config import load_config
             new_cfg = load_config(self.config_path)
             self.config = new_cfg
@@ -212,6 +218,8 @@ class FocusSwitchDaemon:
         """Process a single EV_KEY event (value: 0=up, 1=down, 2=hold) and emit to UInput."""
         # 1. RELEASE (value == 0)
         if value == 0:
+            self._physical_held_buttons.pop(keycode, None)
+
             # Case A: Button was pending in combo buffer -> Fast tap!
             pending = self._pending_buttons.pop(keycode, None)
             if pending is not None:
@@ -275,6 +283,7 @@ class FocusSwitchDaemon:
             return
 
         logical_btn = rotate_dpad_button(button_name, self.active_profile.turn)
+        self._physical_held_buttons[keycode] = logical_btn
         combos = self.active_profile.combos
 
         # If no combos defined in active profile, fast path: emit immediately (0ms delay)
@@ -292,24 +301,48 @@ class FocusSwitchDaemon:
                 self._emit_solo_down(ui, keycode, action)
             return
 
-        # Check if pressing this button completes a combo with any pending button(s)
+        # Check if pressing this button completes a combo with either:
+        # A) a pending companion button (simultaneous press within combo_timeout_ms)
+        # B) an already physically held button (hold-and-press / leader modifier style)
         matched_combo: frozenset[str] | None = None
         matched_pending: list[_PendingButton] = []
+        matched_held_code: int | None = None
 
+        # A) Check pending buffer first (simultaneous tap)
         for p_code, p in list(self._pending_buttons.items()):
-            cand = frozenset({logical_btn, p.button_name})
-            if cand in combos:
-                matched_combo = cand
-                matched_pending.append(p)
-                break
+            if p_code != keycode:
+                cand = frozenset({logical_btn, p.button_name})
+                if cand in combos:
+                    matched_combo = cand
+                    matched_pending.append(p)
+                    break
+
+        # B) Check already held physical buttons (hold-and-press)
+        if matched_combo is None:
+            for h_code, h_btn in list(self._physical_held_buttons.items()):
+                if h_code != keycode:
+                    cand = frozenset({logical_btn, h_btn})
+                    if cand in combos:
+                        matched_combo = cand
+                        matched_held_code = h_code
+                        break
 
         if matched_combo is not None:
-            # Match found! Cancel pending timers for companion button(s)
+            # 1. Cancel pending companion timers if any
             for p in matched_pending:
                 self._pending_buttons.pop(p.keycode, None)
                 if p.timer_handle is not None:
                     p.timer_handle.cancel()
 
+            # 2. If companion was already held and its solo action was emitted, release the solo key immediately!
+            if matched_held_code is not None:
+                held_solo = self._held_chords.pop(matched_held_code, None)
+                if held_solo:
+                    for code in reversed(held_solo):
+                        ui.write(ecodes.EV_KEY, code, 0)
+                    ui.syn()
+
+            # 3. Emit the combo action
             combo_act = combos[matched_combo]
             if combo_act.exec_cmd:
                 try:
@@ -321,6 +354,8 @@ class FocusSwitchDaemon:
                 self._held_combos[keycode] = matched_combo
                 for p in matched_pending:
                     self._held_combos[p.keycode] = matched_combo
+                if matched_held_code is not None:
+                    self._held_combos[matched_held_code] = matched_combo
                 for code in combo_act.evdev_codes:
                     ui.write(ecodes.EV_KEY, code, 1)
                 ui.syn()
@@ -392,6 +427,7 @@ class FocusSwitchDaemon:
                                 ui.write(ecodes.EV_KEY, code, 0)
                     self._active_combos.clear()
                     self._held_combos.clear()
+                    self._physical_held_buttons.clear()
 
                     # Release any held keys on disconnect so nothing sticks
                     for held in self._held_chords.values():

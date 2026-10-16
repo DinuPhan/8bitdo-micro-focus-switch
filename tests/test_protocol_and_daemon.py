@@ -450,6 +450,101 @@ def test_daemon_combos_and_chording_mechanics(tmp_path: Path) -> None:
     asyncio.run(_run_async_test())
 
 
+def test_daemon_hold_and_press_combos(tmp_path: Path) -> None:
+    import asyncio
+
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(
+        """\
+[general]
+backend = "uinput"
+fallback_profile = "work"
+combo_timeout_ms = 40
+
+[profiles.global.combos]
+"L2+LEFT" = ["LEFTMETA", "LEFT"]
+"L2+RIGHT" = ["LEFTMETA", "RIGHT"]
+
+[profiles.work]
+description = "Work Profile"
+turn = 0
+[profiles.work.buttons]
+L2 = "L"
+LEFT = "Left"
+RIGHT = "Right"
+""",
+        encoding="utf-8",
+    )
+    cfg = load_config(cfg_file)
+    prof = cfg.get_profile("work")
+    assert frozenset({"L2", "LEFT"}) in prof.combos
+    assert frozenset({"L2", "RIGHT"}) in prof.combos
+
+    async def _run() -> None:
+        daemon = FocusSwitchDaemon(cfg)
+        ui = _FakeUInput()
+        daemon._on_focus_change(ActiveWindow(window_class="work", window_title="work"))
+
+        # 1. User holds L2 down (factory KEY_L)
+        daemon.handle_key_event(ui, ecodes.KEY_L, 1)
+        assert len(ui.events) == 0  # Buffered in pending combos
+        await asyncio.sleep(0.055)  # Wait 55ms (> 40ms combo_timeout_ms)
+
+        # Solo L key is emitted down!
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_L, 1),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 2. While L2 is STILL held, user taps LEFT (factory KEY_E)
+        daemon.handle_key_event(ui, ecodes.KEY_E, 1)
+
+        # Solo L was retracted, and combo (LEFTMETA + LEFT) is emitted down!
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_L, 0),
+            (ecodes.EV_SYN, 0, 0),
+            (ecodes.EV_KEY, ecodes.KEY_LEFTMETA, 1),
+            (ecodes.EV_KEY, ecodes.KEY_LEFT, 1),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 3. User releases LEFT (factory KEY_E, value 0) while still holding L2
+        daemon.handle_key_event(ui, ecodes.KEY_E, 0)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_LEFT, 0),
+            (ecodes.EV_KEY, ecodes.KEY_LEFTMETA, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 4. User taps RIGHT (factory KEY_F) while still holding L2
+        daemon.handle_key_event(ui, ecodes.KEY_F, 1)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_LEFTMETA, 1),
+            (ecodes.EV_KEY, ecodes.KEY_RIGHT, 1),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 5. User releases RIGHT (factory KEY_F, value 0)
+        daemon.handle_key_event(ui, ecodes.KEY_F, 0)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_RIGHT, 0),
+            (ecodes.EV_KEY, ecodes.KEY_LEFTMETA, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 6. User finally releases L2 (factory KEY_L, value 0)
+        daemon.handle_key_event(ui, ecodes.KEY_L, 0)
+        # L2 solo was already retracted and no combo active on L2 release -> clean no-op
+        assert len(ui.events) == 0
+
+    asyncio.run(_run())
+
+
 def test_visualizer_combos_rendering(tmp_path: Path) -> None:
     from eightbitdo_micro_focus_switch.visualizer import generate_svg_diagram
 
