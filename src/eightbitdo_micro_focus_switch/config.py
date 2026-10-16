@@ -343,12 +343,13 @@ RIGHT = "F"
 """
 
 
-def ensure_default_config(path: Path = DEFAULT_CONFIG_PATH) -> Path:
+def ensure_default_config(path: Path | None = None) -> Path:
     """Create the default profiles.toml if it does not already exist."""
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
-    return path
+    cfg_path = path if path is not None else DEFAULT_CONFIG_PATH
+    if not cfg_path.exists():
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+    return cfg_path
 
 
 def load_config(path: Path | None = None) -> AppConfig:

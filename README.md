@@ -51,6 +51,36 @@ Focus-aware input remapper daemon (`Hyprland` + `evdev`/`uinput`) and direct BLE
 8bitdo-micro-focus-switch daemon --backend ble
 ```
 
+## Visual Keymap Diagram & HUD (`8bitdo-micro-focus-switch show`)
+
+`8bitdo-micro-focus-switch` includes a visual diagram generator that renders the 8BitDo Micro line-art with color-coded callouts and leader lines pointing directly to each physical button and its remapped chords:
+
+```bash
+# Display the mapping for the currently focused window (auto-detected via Hyprland):
+8bitdo-micro-focus-switch show
+
+# Display a specific profile diagram (e.g. YouTube, Anki, AGY):
+8bitdo-micro-focus-switch show youtube
+8bitdo-micro-focus-switch show agy
+
+# Open interactive multi-profile HTML viewer with tabs:
+8bitdo-micro-focus-switch show --interactive
+
+# Save as SVG or PNG:
+8bitdo-micro-focus-switch show youtube -o youtube_keymap.svg
+8bitdo-micro-focus-switch show agy --format png -o agy_keymap.png
+```
+
+### Hyprland Quick HUD Keybinding
+
+Add this to `~/.config/hypr/hyprland.conf` to pop up the current application's controller keymap HUD anytime with a shortcut:
+
+```hyprlang
+# Press Super+M to show 8BitDo Micro keymap for the active window in a floating window:
+windowrulev2 = float, class:^(imv)$, title:^(8bitdo-micro.*)
+bind = $mainMod, M, exec, 8bitdo-micro-focus-switch show --no-wait
+```
+
 ## Running as a Background Service (`systemd --user`)
 
 ```bash

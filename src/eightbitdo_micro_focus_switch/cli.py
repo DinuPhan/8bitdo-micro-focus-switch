@@ -22,6 +22,7 @@ from .protocol import (
     PHYSICAL_BUTTONS,
     get_builtin_hardware_preset,
 )
+from .visualizer import generate_html_viewer, generate_svg_diagram
 
 UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-8bitdo-micro-uinput.rules")
 UDEV_RULE_CONTENT = (
@@ -216,6 +217,110 @@ WantedBy=default.target
     return 0
 
 
+async def _cmd_show(args: argparse.Namespace) -> int:
+    cfg_path = ensure_default_config(args.config)
+    cfg = load_config(cfg_path)
+
+    active_win = None
+    target_profile_name = args.profile
+    if not target_profile_name:
+        try:
+            active_win = await query_active_window()
+            if active_win and (active_win.window_class or active_win.window_title):
+                matched = cfg.resolve_profile_for_window(active_win.window_class, active_win.window_title)
+                target_profile_name = matched.name
+                print(
+                    f"Focused Window: class={active_win.window_class!r}, title={active_win.window_title!r} "
+                    f"-> Profile: {target_profile_name}",
+                    file=sys.stderr,
+                )
+        except Exception:
+            pass
+
+    if not target_profile_name:
+        target_profile_name = cfg.fallback_profile or next(iter(cfg.profiles.keys()), "default")
+
+    prof = cfg.get_profile(target_profile_name)
+
+    is_interactive = getattr(args, "interactive", False) or args.format == "html"
+    if is_interactive:
+        content = generate_html_viewer(cfg.profiles, prof.name)
+        ext = ".html"
+    elif args.format == "png":
+        svg_content = generate_svg_diagram(prof)
+        ext = ".png"
+    else:
+        content = generate_svg_diagram(prof)
+        ext = ".svg"
+
+    if getattr(args, "stdout", False):
+        if args.format == "png":
+            if shutil.which("resvg"):
+                import subprocess
+                import tempfile
+                with tempfile.NamedTemporaryFile("w", suffix=".svg") as s_f:
+                    s_f.write(svg_content)
+                    s_f.flush()
+                    proc = subprocess.run(["resvg", s_f.name, "-"], capture_output=True, check=True)
+                    sys.stdout.buffer.write(proc.stdout)
+                return 0
+            print("Error: 'resvg' is required for PNG stdout export.", file=sys.stderr)
+            return 1
+        sys.stdout.write(content)
+        return 0
+
+    if args.save:
+        out_path = Path(args.save).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        if args.format == "png":
+            if shutil.which("resvg"):
+                import subprocess
+                import tempfile
+                with tempfile.NamedTemporaryFile("w", suffix=".svg") as s_f:
+                    s_f.write(svg_content)
+                    s_f.flush()
+                    subprocess.run(["resvg", s_f.name, str(out_path)], check=True)
+                print(f"Saved PNG diagram to: {out_path}")
+                return 0
+            print("Error: 'resvg' is required for PNG output.", file=sys.stderr)
+            return 1
+        out_path.write_text(content, encoding="utf-8")
+        print(f"Saved diagram to: {out_path}")
+        return 0
+
+    import tempfile
+    tmp_path = Path(tempfile.gettempdir()) / f"8bitdo-micro-{prof.name}{ext}"
+    if args.format == "png":
+        if shutil.which("resvg"):
+            import subprocess
+            tmp_svg = tmp_path.with_suffix(".svg")
+            tmp_svg.write_text(svg_content, encoding="utf-8")
+            subprocess.run(["resvg", str(tmp_svg), str(tmp_path)], check=True)
+        else:
+            print("Error: 'resvg' is required for PNG preview.", file=sys.stderr)
+            return 1
+    else:
+        tmp_path.write_text(content, encoding="utf-8")
+
+    viewer = args.viewer
+    if not viewer:
+        if ext == ".html":
+            viewer = "chromium" if shutil.which("chromium") else "xdg-open"
+        else:
+            viewer = "imv" if shutil.which("imv") else "xdg-open"
+
+    print(f"Displaying {prof.name} ({ext[1:].upper()}) via {viewer} ...", file=sys.stderr)
+    proc = await asyncio.create_subprocess_exec(
+        viewer,
+        str(tmp_path),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    if not getattr(args, "no_wait", False):
+        await proc.wait()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument(
@@ -315,6 +420,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="Backend flag to bake into the systemd service",
     )
 
+    # show / hud / diagram
+    p_show = sub.add_parser(
+        "show",
+        aliases=["hud", "diagram"],
+        parents=[common_parser],
+        help="Display visual button mapping diagram of focused window or specified profile",
+    )
+    p_show.add_argument(
+        "profile",
+        nargs="?",
+        help="Profile name (e.g. 'agy', 'youtube'). If omitted, auto-detects currently focused Hyprland window.",
+    )
+    p_show.add_argument(
+        "--format",
+        choices=("svg", "html", "png"),
+        default="svg",
+        help="Diagram format (default: 'svg')",
+    )
+    p_show.add_argument(
+        "-i",
+        "--interactive",
+        "--all",
+        action="store_true",
+        help="Open interactive multi-profile HTML viewer with tabs",
+    )
+    p_show.add_argument(
+        "-o",
+        "--save",
+        type=Path,
+        help="Save diagram to specified file path instead of opening viewer",
+    )
+    p_show.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Output raw diagram content directly to stdout",
+    )
+    p_show.add_argument(
+        "--viewer",
+        help="Custom image/browser viewer command (e.g. 'imv', 'chromium', 'xdg-open')",
+    )
+    p_show.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Do not block waiting for the viewer process to close",
+    )
+
     return parser
 
 
@@ -329,6 +480,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        if args.command in ("show", "hud", "diagram"):
+            return asyncio.run(_cmd_show(args))
         if args.command == "init-config":
             path = ensure_default_config(args.config)
             print(f"Configuration ready at: {path}")

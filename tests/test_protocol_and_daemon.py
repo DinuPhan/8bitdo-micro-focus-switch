@@ -19,6 +19,7 @@ from eightbitdo_micro_focus_switch.protocol import (
     get_builtin_hardware_preset,
     parse_ble_notification,
     rotate_dpad_button,
+    PHYSICAL_BUTTONS,
 )
 
 # Real 180-byte record_micro captured from live 8BitDo Micro ('80EL' / E4:17:D8:D8:52:02)
@@ -209,4 +210,64 @@ def test_youtube_profile_matching_and_actions(tmp_path: Path) -> None:
     assert len(raw) == RECORD_MICRO_SIZE
     decoded = MicroHardwareProfile.from_bytes(raw)
     assert decoded.enabled is True
+
+
+def test_visualizer_svg_and_html_diagrams(tmp_path: Path) -> None:
+    import xml.etree.ElementTree as ET
+    from eightbitdo_micro_focus_switch.visualizer import generate_html_viewer, generate_svg_diagram
+
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    # 1. Test AGY SVG diagram
+    prof_agy = cfg.get_profile("agy")
+    svg_agy = generate_svg_diagram(prof_agy)
+    root_agy = ET.fromstring(svg_agy)
+    assert root_agy.tag.endswith("svg")
+    assert "8BitDo Micro Keymap — AGY" in svg_agy
+    assert "Backspace" in svg_agy
+    assert "Ctrl + Shift + D" in svg_agy
+    assert "Pageup" in svg_agy
+
+    # 2. Test YouTube SVG diagram
+    prof_yt = cfg.get_profile("youtube")
+    svg_yt = generate_svg_diagram(prof_yt)
+    root_yt = ET.fromstring(svg_yt)
+    assert root_yt.tag.endswith("svg")
+    assert "8BitDo Micro Keymap — YOUTUBE" in svg_yt
+    assert "Shift + Dot" in svg_yt
+    assert "Shift + Comma" in svg_yt
+
+    # Verify all 16 buttons are represented
+    for btn in PHYSICAL_BUTTONS:
+        assert f">{btn}<" in svg_agy or f" {btn}<" in svg_agy or f">{btn} " in svg_agy or btn in svg_agy
+
+    # 3. Test multi-profile interactive HTML viewer
+    html = generate_html_viewer(cfg.profiles, "agy")
+    assert "<!DOCTYPE html>" in html
+    assert "selectProfile" in html
+    assert 'class="tab-btn active"' in html
+    for name in cfg.profiles:
+        assert f"selectProfile('{name}')" in html
+        assert f'id="profile-{name}"' in html
+
+
+def test_cli_show_command(tmp_path: Path) -> None:
+    from eightbitdo_micro_focus_switch.cli import main
+
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+
+    out_svg = tmp_path / "output.svg"
+    ret = main(["--config", str(cfg_file), "show", "agy", "-o", str(out_svg)])
+    assert ret == 0
+    assert out_svg.exists()
+    assert "<svg" in out_svg.read_text(encoding="utf-8")
+
+    out_html = tmp_path / "viewer.html"
+    ret_html = main(["--config", str(cfg_file), "show", "--interactive", "-o", str(out_html)])
+    assert ret_html == 0
+    assert out_html.exists()
+    assert "<!DOCTYPE html>" in out_html.read_text(encoding="utf-8")
 
