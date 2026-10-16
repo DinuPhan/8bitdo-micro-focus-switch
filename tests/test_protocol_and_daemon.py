@@ -332,4 +332,136 @@ def test_cli_discover_command(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Ca
     assert "RSSI=-42 dBm" in out
 
 
+def test_combo_parsing_and_normalization() -> None:
+    from eightbitdo_micro_focus_switch.config import parse_combo_buttons
+
+    assert parse_combo_buttons("L+R") == frozenset({"L", "R"})
+    assert parse_combo_buttons("L1 + R1") == frozenset({"L", "R"})
+    assert parse_combo_buttons("R1+L1") == frozenset({"L", "R"})
+    assert parse_combo_buttons("SELECT + START") == frozenset({"SELECT", "START"})
+    assert parse_combo_buttons("MINUS + PLUS") == frozenset({"SELECT", "START"})
+    assert parse_combo_buttons(["L2", "R2"]) == frozenset({"L2", "R2"})
+
+    with pytest.raises(ValueError, match="at least 2 simultaneous buttons"):
+        parse_combo_buttons("L")
+
+
+def test_daemon_combos_and_chording_mechanics(tmp_path: Path) -> None:
+    import asyncio
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    prof_agy = cfg.get_profile("agy")
+    assert frozenset({"L", "R"}) in prof_agy.combos
+    combo_act = prof_agy.combos[frozenset({"L", "R"})]
+    assert combo_act.keys == ("LEFTMETA", "K")
+
+    async def _run_async_test() -> None:
+        daemon = FocusSwitchDaemon(cfg)
+        ui = _FakeUInput()
+        daemon._on_focus_change(ActiveWindow(window_class="ghostty", window_title="agy terminal"))
+        assert daemon.active_profile.name == "agy"
+
+        # 1. Non-combo button (A -> BACKSPACE) has ZERO delay (emits immediately)
+        daemon.handle_key_event(ui, ecodes.KEY_G, 1)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_BACKSPACE, 1),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+        daemon.handle_key_event(ui, ecodes.KEY_G, 0)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_BACKSPACE, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 2. Simultaneous Combo (L + R pressed within 20ms < 40ms)
+        daemon.handle_key_event(ui, ecodes.KEY_K, 1)
+        assert len(ui.events) == 0  # Buffered! Solo TAB is NOT emitted
+
+        await asyncio.sleep(0.015)  # 15ms later, press R (factory KEY_M)
+        daemon.handle_key_event(ui, ecodes.KEY_M, 1)
+
+        # Matched combo L+R -> Emits LEFTMETA + K down! Solo TAB was NEVER emitted!
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_LEFTMETA, 1),
+            (ecodes.EV_KEY, ecodes.KEY_K, 1),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # Repeat on combo
+        daemon.handle_key_event(ui, ecodes.KEY_M, 2)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_K, 2),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # Release L -> Releases combo keys (K up, LEFTMETA up)
+        daemon.handle_key_event(ui, ecodes.KEY_K, 0)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_K, 0),
+            (ecodes.EV_KEY, ecodes.KEY_LEFTMETA, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # Release R -> Already released, clean no-op
+        daemon.handle_key_event(ui, ecodes.KEY_M, 0)
+        assert len(ui.events) == 0
+
+        # 3. Solo key timeout fallback: User presses L ALONE and holds it
+        daemon.handle_key_event(ui, ecodes.KEY_K, 1)
+        assert len(ui.events) == 0  # Buffered
+        await asyncio.sleep(0.055)  # Wait 55ms (> 40ms combo_timeout_ms)
+
+        # Timer expired -> Solo TAB is flushed down!
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_TAB, 1),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # User releases L -> TAB up
+        daemon.handle_key_event(ui, ecodes.KEY_K, 0)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_TAB, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 4. Fast tap: User taps L quickly (< 40ms, e.g. 10ms tap duration)
+        daemon.handle_key_event(ui, ecodes.KEY_K, 1)
+        assert len(ui.events) == 0
+        await asyncio.sleep(0.010)
+        daemon.handle_key_event(ui, ecodes.KEY_K, 0)
+
+        # Fast tap emits TAB down and TAB up immediately!
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_TAB, 1),
+            (ecodes.EV_SYN, 0, 0),
+            (ecodes.EV_KEY, ecodes.KEY_TAB, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+
+    asyncio.run(_run_async_test())
+
+
+def test_visualizer_combos_rendering(tmp_path: Path) -> None:
+    from eightbitdo_micro_focus_switch.visualizer import generate_svg_diagram
+
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    prof_agy = cfg.get_profile("agy")
+    svg = generate_svg_diagram(prof_agy)
+    assert "COMBOS" in svg
+    assert "L1 + R1" in svg
+    assert "Super + K" in svg
+
+
 

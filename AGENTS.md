@@ -86,7 +86,22 @@ Agents can assign actions in multiple ways:
 5. **No Action**:
    `SELECT = "None"`
 
-### 2.3 Supported Key Names
+### 2.3 Multi-Button Combos & Chording
+
+Agents can configure simultaneous multi-button chords under `[profiles.<name>.combos]`:
+
+```toml
+[profiles.obsidian.combos]
+"L+R" = ["Super", "K"]               # L1 + R1 pressed within 40ms -> Quick Switcher
+"Select+Start" = "exec:hyprctl dispatch togglespecialworkspace"
+"L2+R2" = ["Ctrl", "Shift", "F"]     # Search in all files
+```
+
+- Canonical button names (e.g., `L`, `R`, `SELECT`, `START`, `A`, `B`) can be joined with `+`.
+- Aliases like `"L1+R1"` are automatically normalized to canonical `"L+R"`.
+- Zero latency is preserved on buttons not part of any combo.
+
+### 2.4 Supported Key Names
 
 Friendly names are automatically mapped to Linux evdev codes and USB HID codes:
 - **Modifiers**: `Ctrl` (`LeftCtrl`), `Shift` (`LeftShift`), `Alt` (`LeftAlt`), `Super` (`LeftMeta`)

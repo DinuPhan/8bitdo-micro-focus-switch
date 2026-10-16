@@ -21,8 +21,18 @@ from .protocol import (
     rotate_dpad_button,
 )
 
+from dataclasses import dataclass
+
 VIRTUAL_DEVICE_NAME = "8BitDo Micro Focus-Switch Virtual Keyboard"
 logger = logging.getLogger("8bitdo-micro")
+
+
+@dataclass(slots=True)
+class _PendingButton:
+    keycode: int
+    button_name: str
+    action: ButtonAction | None
+    timer_handle: asyncio.TimerHandle | None = None
 
 
 def find_micro_input_devices() -> list[InputDevice]:
@@ -77,9 +87,14 @@ class FocusSwitchDaemon:
         self.ble_address = ble_address
         self.active_window = ActiveWindow(window_class="", window_title="")
         self.active_profile: ProfileConfig = config.resolve_profile_for_window("", "")
-        # Tracks physical evdev keycode -> tuple of virtual evdev keycodes pressed on key-down
-        # so releasing a button after a focus switch always releases the exact keys pressed.
+        # Tracks physical evdev keycode -> tuple of virtual evdev keycodes pressed on key-down (solo chords)
         self._held_chords: dict[int, tuple[int, ...]] = {}
+        # Physical evdev keycode -> PendingButton awaiting combo timeout or companion button
+        self._pending_buttons: dict[int, _PendingButton] = {}
+        # Active combo button set -> ButtonAction currently held down
+        self._active_combos: dict[frozenset[str], ButtonAction] = {}
+        # Physical evdev keycode -> active combo button set
+        self._held_combos: dict[int, frozenset[str]] = {}
         self._ble_trigger = asyncio.Event()
 
     def _on_focus_change(self, window: ActiveWindow) -> None:
@@ -89,6 +104,12 @@ class FocusSwitchDaemon:
             window.window_title,
         )
         if new_profile.name != self.active_profile.name:
+            # Cancel any pending combo timers from the previous profile
+            for p in self._pending_buttons.values():
+                if p.timer_handle is not None:
+                    p.timer_handle.cancel()
+            self._pending_buttons.clear()
+
             logger.info(
                 "Focus -> class=%r title=%r | Switching profile: %s -> %s (turn=%d°)",
                 window.window_class,
@@ -117,6 +138,8 @@ class FocusSwitchDaemon:
         for prof in self.config.profiles.values():
             for act in prof.buttons.values():
                 all_keys.update(act.evdev_codes)
+            for act in prof.combos.values():
+                all_keys.update(act.evdev_codes)
         # Include standard keyboard range so pass-through of non-factory keys also works
         for code in range(1, 249):
             all_keys.add(code)
@@ -139,10 +162,60 @@ class FocusSwitchDaemon:
         except Exception as exc:
             logger.warning("exec command %r failed: %s", cmd, exc)
 
+    def _emit_solo_down(self, ui: UInput, keycode: int, action: ButtonAction) -> None:
+        if action.exec_cmd:
+            try:
+                asyncio.create_task(self._spawn_exec(action.exec_cmd))
+            except RuntimeError:
+                pass
+        if action.evdev_codes:
+            self._held_chords[keycode] = action.evdev_codes
+            for code in action.evdev_codes:
+                ui.write(ecodes.EV_KEY, code, 1)
+            ui.syn()
+
+    def _flush_pending_button(self, ui: UInput, keycode: int) -> None:
+        pending = self._pending_buttons.pop(keycode, None)
+        if pending is None:
+            return
+        if pending.action is not None:
+            self._emit_solo_down(ui, pending.keycode, pending.action)
+
     def handle_key_event(self, ui: UInput, keycode: int, value: int) -> None:
         """Process a single EV_KEY event (value: 0=up, 1=down, 2=hold) and emit to UInput."""
-        # Release: always release whatever chord was recorded when this physical key was pressed
+        # 1. RELEASE (value == 0)
         if value == 0:
+            # Case A: Button was pending in combo buffer -> Fast tap!
+            pending = self._pending_buttons.pop(keycode, None)
+            if pending is not None:
+                if pending.timer_handle is not None:
+                    pending.timer_handle.cancel()
+                if pending.action is not None:
+                    if pending.action.exec_cmd:
+                        try:
+                            asyncio.create_task(self._spawn_exec(pending.action.exec_cmd))
+                        except RuntimeError:
+                            pass
+                    if pending.action.evdev_codes:
+                        for code in pending.action.evdev_codes:
+                            ui.write(ecodes.EV_KEY, code, 1)
+                        ui.syn()
+                        for code in reversed(pending.action.evdev_codes):
+                            ui.write(ecodes.EV_KEY, code, 0)
+                        ui.syn()
+                return
+
+            # Case B: Button was part of an active combo
+            combo_set = self._held_combos.pop(keycode, None)
+            if combo_set is not None:
+                combo_act = self._active_combos.pop(combo_set, None)
+                if combo_act is not None and combo_act.evdev_codes:
+                    for code in reversed(combo_act.evdev_codes):
+                        ui.write(ecodes.EV_KEY, code, 0)
+                    ui.syn()
+                return
+
+            # Case C: Solo held chord release
             held = self._held_chords.pop(keycode, None)
             if held is not None:
                 for code in reversed(held):
@@ -150,36 +223,103 @@ class FocusSwitchDaemon:
                 ui.syn()
             return
 
-        button_name = FACTORY_EVDEV_TO_BUTTON.get(keycode)
-        if button_name is None:
-            # Non-factory key (e.g., if controller was not in factory preset): pass through
-            if value == 1:
-                self._held_chords[keycode] = (keycode,)
-                ui.write(ecodes.EV_KEY, keycode, 1)
-                ui.syn()
-            elif value == 2 and keycode in self._held_chords:
-                ui.write(ecodes.EV_KEY, keycode, 2)
-                ui.syn()
-            return
-
-        action = self.translate_button_action(button_name)
-        if action is None:
-            return
-
-        if value == 1:
-            if action.exec_cmd:
-                asyncio.create_task(self._spawn_exec(action.exec_cmd))
-            if action.evdev_codes:
-                self._held_chords[keycode] = action.evdev_codes
-                for code in action.evdev_codes:
-                    ui.write(ecodes.EV_KEY, code, 1)
-                ui.syn()
-        elif value == 2:
+        # 2. REPEAT (value == 2)
+        if value == 2:
+            combo_set = self._held_combos.get(keycode)
+            if combo_set is not None:
+                combo_act = self._active_combos.get(combo_set)
+                if combo_act and combo_act.evdev_codes:
+                    ui.write(ecodes.EV_KEY, combo_act.evdev_codes[-1], 2)
+                    ui.syn()
+                return
             held = self._held_chords.get(keycode)
             if held:
-                # Emit repeat on the last key of the chord (primary key)
                 ui.write(ecodes.EV_KEY, held[-1], 2)
                 ui.syn()
+            return
+
+        # 3. PRESS (value == 1)
+        button_name = FACTORY_EVDEV_TO_BUTTON.get(keycode)
+        if button_name is None:
+            # Non-factory key: pass through directly
+            self._held_chords[keycode] = (keycode,)
+            ui.write(ecodes.EV_KEY, keycode, 1)
+            ui.syn()
+            return
+
+        logical_btn = rotate_dpad_button(button_name, self.active_profile.turn)
+        combos = self.active_profile.combos
+
+        # If no combos defined in active profile, fast path: emit immediately (0ms delay)
+        if not combos:
+            action = self.active_profile.buttons.get(logical_btn)
+            if action is not None:
+                self._emit_solo_down(ui, keycode, action)
+            return
+
+        # Check if logical_btn participates in ANY defined combo in this profile
+        combo_buttons = {b for c in combos for b in c}
+        if logical_btn not in combo_buttons:
+            action = self.active_profile.buttons.get(logical_btn)
+            if action is not None:
+                self._emit_solo_down(ui, keycode, action)
+            return
+
+        # Check if pressing this button completes a combo with any pending button(s)
+        matched_combo: frozenset[str] | None = None
+        matched_pending: list[_PendingButton] = []
+
+        for p_code, p in list(self._pending_buttons.items()):
+            cand = frozenset({logical_btn, p.button_name})
+            if cand in combos:
+                matched_combo = cand
+                matched_pending.append(p)
+                break
+
+        if matched_combo is not None:
+            # Match found! Cancel pending timers for companion button(s)
+            for p in matched_pending:
+                self._pending_buttons.pop(p.keycode, None)
+                if p.timer_handle is not None:
+                    p.timer_handle.cancel()
+
+            combo_act = combos[matched_combo]
+            if combo_act.exec_cmd:
+                try:
+                    asyncio.create_task(self._spawn_exec(combo_act.exec_cmd))
+                except RuntimeError:
+                    pass
+            if combo_act.evdev_codes:
+                self._active_combos[matched_combo] = combo_act
+                self._held_combos[keycode] = matched_combo
+                for p in matched_pending:
+                    self._held_combos[p.keycode] = matched_combo
+                for code in combo_act.evdev_codes:
+                    ui.write(ecodes.EV_KEY, code, 1)
+                ui.syn()
+            return
+
+        # No companion button pending yet -> buffer this button for combo_timeout_ms
+        single_act = self.active_profile.buttons.get(logical_btn)
+        timeout_sec = max(0.005, self.active_profile.combo_timeout_ms / 1000.0)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None and loop.is_running():
+            handle = loop.call_later(timeout_sec, self._flush_pending_button, ui, keycode)
+            self._pending_buttons[keycode] = _PendingButton(
+                keycode=keycode,
+                button_name=logical_btn,
+                action=single_act,
+                timer_handle=handle,
+            )
+        else:
+            # Synchronous fallback if no running event loop
+            if single_act is not None:
+                self._emit_solo_down(ui, keycode, single_act)
 
     async def _evdev_loop(self) -> None:
         """Continuously attach to the 8BitDo Micro input device, grab it, and remap events."""
@@ -212,11 +352,25 @@ class FocusSwitchDaemon:
                 except OSError as exc:
                     logger.info("8BitDo Micro disconnected (%s); releasing held keys.", exc)
                 finally:
+                    # Cancel any pending combo timers
+                    for p in self._pending_buttons.values():
+                        if p.timer_handle is not None:
+                            p.timer_handle.cancel()
+                    self._pending_buttons.clear()
+
+                    # Release any active combos
+                    for combo_act in self._active_combos.values():
+                        if combo_act.evdev_codes:
+                            for code in reversed(combo_act.evdev_codes):
+                                ui.write(ecodes.EV_KEY, code, 0)
+                    self._active_combos.clear()
+                    self._held_combos.clear()
+
                     # Release any held keys on disconnect so nothing sticks
                     for held in self._held_chords.values():
                         for code in reversed(held):
                             ui.write(ecodes.EV_KEY, code, 0)
-                    if self._held_chords:
+                    if self._held_chords or self._active_combos:
                         ui.syn()
                     self._held_chords.clear()
                     try:

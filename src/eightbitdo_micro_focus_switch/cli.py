@@ -55,6 +55,12 @@ def _format_profile_table(config_path: Path) -> str:
         lines.append(f"  - {name:<12} [turn={prof.turn:>3}°] {match_str}")
         if prof.description:
             lines.append(f"      {prof.description}")
+        if prof.combos:
+            combo_parts = [
+                f"{'+'.join(sorted(c))} -> {'+'.join(act.keys) if act.keys else act.exec_cmd}"
+                for c, act in prof.combos.items()
+            ]
+            lines.append(f"      Combos: {', '.join(combo_parts)}")
     return "\n".join(lines)
 
 
@@ -355,6 +361,11 @@ UP = "Up"
 DOWN = "Down"
 LEFT = "Left"
 RIGHT = "Right"
+
+# Optional simultaneous button combinations (e.g. L + R pressed within 40ms)
+# [profiles.{norm_name}.combos]
+# "L+R" = ["Super", "K"]
+# "Select+Start" = "exec:notify-send 'Profile' 'Switched'"
 """
                 existing_text = cfg_path.read_text(encoding="utf-8")
                 if not existing_text.endswith("\n"):

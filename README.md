@@ -165,6 +165,23 @@ The 16 physical buttons are named:
 
 If you like holding the controller vertically in one hand (e.g. for reading or flashcards), set `turn = 90` in your profile. The D-pad automatically rotates so physical "Up" continues pointing in the direction you expect!
 
+### Multi-Button Combos & Chording (e.g. L1 + R1 -> Super + K)
+
+You can map simultaneous button presses (chords) into hotkeys or shell commands! When defined, pressing both buttons within ~40ms suppresses the individual button actions and fires your combo hotkey instead:
+
+```toml
+[profiles.agy.combos]
+"L+R" = ["Super", "K"]               # L1 + R1 -> Super + K (Command palette / app launcher)
+"Select+Start" = "exec:notify-send 'Micro' 'Hello!'"
+"L2+R2" = ["Ctrl", "Shift", "P"]
+```
+
+- **Zero-Latency Solo Buttons**: Buttons that are not part of any combo fire immediately with `0ms` delay.
+- **Fast Tap Guarantee**: Tapping a combo button quickly will still register its solo key instantly upon release.
+- **Visual Diagram Integration**: Configured combos appear as dedicated glowing badges at the bottom of the visual keymap!
+
+> **Hardware vs. Software Mode**: Multi-button combos run seamlessly in software daemon mode (`uinput`). The 8BitDo Micro microcontroller's onboard memory only holds 18 single-button slots, so BLE GATT hardware reflash only stores single button mappings.
+
 ---
 
 ## Direct Hardware Flasher (No Phone Needed)

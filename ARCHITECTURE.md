@@ -112,7 +112,13 @@ Packets sent over characteristic `0xFF13` use a 17-byte header prefix prepended 
   - Arbitrary shell commands (`exec: notify-send ...`).
   - D-pad reorientation on the fly.
   - Non-HID Linux keys (e.g. Media Volume, Brightness).
-- **Release Safety**: The daemon tracks currently held physical keys. If the focused window changes while a key is physically depressed, releasing the button releases the original key combination rather than sending a release for the newly activated profile's keys.
+  - **Simultaneous Multi-Button Combos / Chording**:
+    - When buttons belonging to a defined combo (e.g. `L1 + R1`) are pressed down, a configurable buffer window (`combo_timeout_ms`, default 40ms) holds the initial button.
+    - If a matching companion button arrives before timeout: single button emission is cancelled, and the chord action (e.g. `Super + K`) is fired to `uinput`.
+    - If no companion button arrives within 40ms: the buffered single button is immediately flushed.
+    - Single buttons not participating in any combo bypass the buffer completely, firing with `0ms` latency.
+    - Fast tap safety: releasing a pending button before the timeout expires immediately emits a rapid tap (down + up) so fast keystrokes are never delayed or dropped.
+- **Release Safety**: The daemon tracks currently held physical keys and active combo groups. If the focused window changes while keys are physically depressed, releasing any button safely terminates only the original key combination without phantom key repeats.
 
 ### 3.2 Mode B: `ble` Direct Hardware Reflash
 - **Mechanism**: The daemon monitors Hyprland focus. When a target window gains focus, the daemon connects to the controller's `"80EL"` BLE interface in the background and rewrites the 180-byte hardware mapping directly into the controller's onboard memory.

@@ -81,6 +81,22 @@ class ButtonAction:
         )
 
 
+def parse_combo_buttons(key: str | list[str] | tuple[str, ...] | frozenset[str]) -> frozenset[str]:
+    """Parse a combo specification string like 'L+R' or 'L1 + R1' into canonical button names."""
+    if isinstance(key, frozenset):
+        return key
+    if isinstance(key, str):
+        parts = [p.strip() for p in key.split("+") if p.strip()]
+    elif isinstance(key, (list, tuple, set)):
+        parts = [str(p).strip() for p in key if str(p).strip()]
+    else:
+        raise ValueError(f"Invalid combo definition: {key!r}")
+    if len(parts) < 2:
+        raise ValueError(f"Combos require at least 2 simultaneous buttons (got {key!r})")
+    normalized = [normalize_button_name(p) for p in parts]
+    return frozenset(normalized)
+
+
 @dataclass
 class ProfileConfig:
     """A named mapping profile that can be activated by window focus or flashed via BLE."""
@@ -90,7 +106,9 @@ class ProfileConfig:
     match_class: str | None = None
     match_title: str | None = None
     turn: int = 0  # degrees: 0, 90, 180, 270
+    combo_timeout_ms: int = 40  # Window in ms to detect simultaneous combo presses before flushing solo key
     buttons: dict[str, ButtonAction] = field(default_factory=dict)
+    combos: dict[frozenset[str], ButtonAction] = field(default_factory=dict)
     _class_re: re.Pattern[str] | None = field(default=None, init=False, repr=False)
     _title_re: re.Pattern[str] | None = field(default=None, init=False, repr=False)
 
@@ -200,12 +218,18 @@ fallback_profile = "agy"
 # backend: "uinput" (instant <1ms host-side remapping; requires controller in factory default `ble reset` mode)
 #          "ble"    (flashes hardware profile over BLE GATT '80EL' on focus change)
 backend = "uinput"
+# combo_timeout_ms: Detection window (in ms) for simultaneous button combinations (default: 40)
+combo_timeout_ms = 40
 
 [profiles.agy]
 description = "Antigravity (agy) / Terminal Coding Profile (captured from controller)"
 match_class = '^(com\.mitchellh\.ghostty|kitty|Alacritty|foot|org\.wezfurlong\.wezterm)$'
 match_title = "agy"
 turn = 0
+
+[profiles.agy.combos]
+# Simultaneous button chords: pressing both buttons within 40ms emits this action instead of solo keys
+"L+R" = ["LEFTMETA", "K"]
 
 [profiles.agy.buttons]
 A = "BACKSPACE"
@@ -371,8 +395,17 @@ def load_config(path: Path | None = None) -> AppConfig:
         if not isinstance(prof_data, dict):
             continue
         raw_buttons = dict(prof_data.get("buttons", {}))
+        raw_combos = dict(prof_data.get("combos", {}))
         for k, v in prof_data.items():
-            if k not in ("buttons", "description", "match_class", "match_title", "turn"):
+            if k in ("buttons", "combos", "description", "match_class", "match_title", "turn", "combo_timeout_ms"):
+                continue
+            if "+" in k:
+                try:
+                    norm_c = parse_combo_buttons(k)
+                    raw_combos.setdefault(norm_c, v)
+                except ValueError:
+                    pass
+            else:
                 try:
                     norm_k = normalize_button_name(k)
                     raw_buttons.setdefault(norm_k, v)
@@ -382,13 +415,23 @@ def load_config(path: Path | None = None) -> AppConfig:
         for btn_key, btn_spec in raw_buttons.items():
             norm_btn = normalize_button_name(btn_key)
             buttons[norm_btn] = ButtonAction.from_raw(btn_spec)
+
+        combos: dict[frozenset[str], ButtonAction] = {}
+        for combo_key, combo_spec in raw_combos.items():
+            norm_combo = parse_combo_buttons(combo_key) if not isinstance(combo_key, frozenset) else combo_key
+            combos[norm_combo] = ButtonAction.from_raw(combo_spec)
+
+        combo_timeout_ms = int(prof_data.get("combo_timeout_ms", general.get("combo_timeout_ms", 40)))
+
         profiles[prof_name] = ProfileConfig(
             name=prof_name,
             description=str(prof_data.get("description", "")),
             match_class=prof_data.get("match_class"),
             match_title=prof_data.get("match_title"),
             turn=int(prof_data.get("turn", 0)),
+            combo_timeout_ms=combo_timeout_ms,
             buttons=buttons,
+            combos=combos,
         )
 
     # Always ensure built-in presets are reachable if not overridden

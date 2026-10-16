@@ -187,6 +187,38 @@ def generate_svg_diagram(profile: ProfileConfig) -> str:
         lines.append(f'    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">{action_text}</text>')
         lines.append('  </g>')
 
+    # Combos & Chords Footer
+    if profile.combos:
+        lines.append('  <!-- Combos & Simultaneous Chords Footer -->')
+        lines.append('  <g transform="translate(140, 568)">')
+        lines.append('    <rect width="920" height="56" rx="10" fill="#181825" stroke="#45475a" stroke-width="1.2" />')
+        lines.append('    <rect x="12" y="14" width="90" height="28" rx="6" fill="#fab387" fill-opacity="0.18" stroke="#fab387" stroke-width="1" />')
+        lines.append('    <text x="57" y="32" text-anchor="middle" fill="#fab387" font-size="11" font-weight="bold">⚡ COMBOS</text>')
+        chip_x = 114
+        for combo_btns, act in profile.combos.items():
+            btn_display = " + ".join(BUTTON_METADATA.get(b, (b, ""))[0] for b in sorted(combo_btns))
+            act_display = _format_action_text(act)
+            chip_text = f"{btn_display}  ➔  {act_display}"
+            chip_w = max(170, len(chip_text) * 8 + 24)
+            if chip_x + chip_w > 908:
+                break
+            arrow_x = 12 + len(btn_display) * 7 + 4
+            act_x = arrow_x + 18
+            lines.append(f'    <g transform="translate({chip_x}, 12)">')
+            lines.append(f'      <rect width="{chip_w}" height="32" rx="6" fill="#1e1e2e" stroke="#313244" stroke-width="1" />')
+            lines.append(f'      <text x="12" y="21" fill="#f9e2af" font-size="11" font-weight="bold">{html.escape(btn_display)}</text>')
+            lines.append(f'      <text x="{arrow_x}" y="21" fill="#89b4fa" font-size="11">➔</text>')
+            lines.append(f'      <text x="{act_x}" y="21" fill="#cdd6f4" font-size="11" font-weight="bold">{html.escape(act_display)}</text>')
+            lines.append('    </g>')
+            chip_x += chip_w + 10
+        lines.append('  </g>')
+    else:
+        lines.append('  <!-- Combos Hint Footer -->')
+        lines.append('  <g transform="translate(240, 574)">')
+        lines.append('    <rect width="720" height="42" rx="8" fill="#181825" stroke="#313244" stroke-width="1" />')
+        lines.append(f'    <text x="360" y="26" text-anchor="middle" fill="#6c7086" font-size="11">💡 Tip: Define multi-button chords like "L+R" under [profiles.{profile.name}.combos]</text>')
+        lines.append('  </g>')
+
     lines.append('</svg>')
     return '\n'.join(lines)
 
