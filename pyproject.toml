@@ -1,0 +1,28 @@
+[project]
+name = "8bitdo-micro-focus-switch"
+version = "0.1.0"
+description = "Focus-aware input remapper daemon (Hyprland + evdev/uinput) and direct BLE GATT hardware profile flasher for the 8BitDo Micro controller in Keyboard mode"
+readme = "README.md"
+authors = [
+    { name = "Nguyen Dinh Phan", email = "nguyenphan.uit@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "bleak>=3.0.2",
+    "evdev>=2.0.0",
+]
+
+[project.scripts]
+8bitdo-micro-focus-switch = "eightbitdo_micro_focus_switch.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "eightbitdo_micro_focus_switch"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
