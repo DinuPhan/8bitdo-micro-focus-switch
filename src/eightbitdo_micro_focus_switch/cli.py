@@ -217,37 +217,48 @@ WantedBy=default.target
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="8bitdo-micro-focus-switch",
-        description=(
-            "Focus-aware input remapper daemon (Hyprland + evdev/uinput) and "
-            "direct BLE GATT ('80EL') hardware profile flasher for the 8BitDo Micro."
-        ),
-    )
-    parser.add_argument(
+    common_parser = argparse.ArgumentParser(add_help=False)
+    common_parser.add_argument(
         "-c",
         "--config",
         type=Path,
         default=DEFAULT_CONFIG_PATH,
         help=f"Path to profiles.toml (default: {DEFAULT_CONFIG_PATH})",
     )
-    parser.add_argument(
+    common_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
         help="Enable debug logging",
     )
 
+    parser = argparse.ArgumentParser(
+        prog="8bitdo-micro-focus-switch",
+        parents=[common_parser],
+        description=(
+            "Focus-aware input remapper daemon (Hyprland + evdev/uinput) and "
+            "direct BLE GATT ('80EL') hardware profile flasher for the 8BitDo Micro."
+        ),
+    )
+
     sub = parser.add_subparsers(dest="command", required=True)
 
     # status
-    p_status = sub.add_parser("status", help="Show Hyprland focus, input device, and profile status")
+    p_status = sub.add_parser(
+        "status",
+        parents=[common_parser],
+        help="Show Hyprland focus, input device, and profile status",
+    )
     p_status.add_argument("--ble", action="store_true", help="Also query live hardware state over BLE GATT")
     p_status.add_argument("--address", help="Optional BLE MAC address override (e.g. E4:17:D8:D8:52:02)")
     p_status.add_argument("--timeout", type=float, default=6.0, help="BLE scan timeout in seconds")
 
     # daemon
-    p_daemon = sub.add_parser("daemon", help="Run the Hyprland focus-aware profile switching daemon")
+    p_daemon = sub.add_parser(
+        "daemon",
+        parents=[common_parser],
+        help="Run the Hyprland focus-aware profile switching daemon",
+    )
     p_daemon.add_argument(
         "--backend",
         choices=("uinput", "ble", "hybrid"),
