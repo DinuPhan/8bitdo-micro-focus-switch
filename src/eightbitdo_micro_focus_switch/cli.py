@@ -5,8 +5,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 from pathlib import Path
+import re
+import shlex
 import shutil
+import subprocess
 import sys
 
 from .ble import (
@@ -54,7 +58,7 @@ def _format_profile_table(config_path: Path) -> str:
 
 
 async def _cmd_status(args: argparse.Namespace) -> int:
-    cfg_path = ensure_default_config(args.config)
+    cfg_path = ensure_default_config(getattr(args, "config", None))
     cfg = load_config(cfg_path)
 
     sock = find_hyprland_socket2()
@@ -105,7 +109,7 @@ async def _cmd_ble_read(args: argparse.Namespace) -> int:
 
 
 async def _cmd_ble_write(args: argparse.Namespace) -> int:
-    cfg_path = ensure_default_config(args.config)
+    cfg_path = ensure_default_config(getattr(args, "config", None))
     cfg = load_config(cfg_path)
     profile_name = args.profile
 
@@ -148,7 +152,7 @@ async def _cmd_ble_reset(args: argparse.Namespace) -> int:
 
 
 async def _cmd_daemon(args: argparse.Namespace) -> int:
-    cfg_path = ensure_default_config(args.config)
+    cfg_path = ensure_default_config(getattr(args, "config", None))
     cfg = load_config(cfg_path)
 
     if args.ensure_factory_ble:
@@ -182,7 +186,7 @@ async def _cmd_daemon(args: argparse.Namespace) -> int:
 
 
 def _cmd_install_service(args: argparse.Namespace) -> int:
-    ensure_default_config(args.config)
+    cfg_path = ensure_default_config(getattr(args, "config", None))
     exe = shutil.which("8bitdo-micro-focus-switch") or str(Path(sys.argv[0]).resolve())
     service_dir = Path.home() / ".config" / "systemd" / "user"
     service_dir.mkdir(parents=True, exist_ok=True)
@@ -196,7 +200,7 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart={exe} daemon --config {args.config}{backend_arg}
+ExecStart={exe} daemon --config {cfg_path}{backend_arg}
 Restart=on-failure
 RestartSec=2
 
@@ -217,8 +221,175 @@ WantedBy=default.target
     return 0
 
 
+def find_profile_line_number(config_path: Path, profile_name: str) -> int | None:
+    """Find the 1-indexed line number where [profiles.<name>] is defined in config."""
+    norm = profile_name.strip().lower()
+    pattern = re.compile(rf"^\s*\[profiles\.{re.escape(norm)}\]\s*$", re.IGNORECASE)
+    try:
+        content = config_path.read_text(encoding="utf-8")
+        for idx, line in enumerate(content.splitlines(), start=1):
+            if pattern.match(line.strip()):
+                return idx
+    except Exception:
+        pass
+    return None
+
+
+def build_editor_command(editor_cmd: str, file_path: Path, line_number: int | None = None) -> list[str]:
+    """Build command arguments to launch the editor at file_path (and optional line_number)."""
+    parts = shlex.split(editor_cmd)
+    if not parts:
+        parts = ["nvim"] if shutil.which("nvim") else ["nano"]
+
+    if line_number is None or line_number <= 0:
+        return parts + [str(file_path)]
+
+    base = Path(parts[0]).name.lower()
+    if base in ("code", "codium", "cursor"):
+        return parts + ["-g", f"{file_path}:{line_number}"]
+    elif base in ("hx", "helix"):
+        return parts + [f"{file_path}:{line_number}"]
+    else:
+        # Standard POSIX / vi line option (+<line>) supported by nvim, vim, nano, micro, omarchy-launch-editor
+        return parts + [f"+{line_number}", str(file_path)]
+
+
+def _cmd_config(args: argparse.Namespace) -> int:
+    cfg_path = ensure_default_config(getattr(args, "config", None))
+
+    # Backward compatibility: 'init-config' without arguments just creates/ensures config and prints path
+    if getattr(args, "command", "") == "init-config" and not getattr(args, "profile", None):
+        print(f"Configuration ready at: {cfg_path}")
+        return 0
+
+    if getattr(args, "path", False):
+        print(cfg_path)
+        return 0
+
+    if getattr(args, "list", False):
+        cfg = load_config(cfg_path)
+        print(f"Config File: {cfg_path}")
+        print("Configured Profiles:")
+        for name in cfg.profiles:
+            lineno = find_profile_line_number(cfg_path, name)
+            loc = f" (line {lineno})" if lineno else ""
+            print(f"  - {name:<14}{loc}")
+        return 0
+
+    target_profile = getattr(args, "profile", None)
+    target_line: int | None = None
+
+    if target_profile:
+        norm_name = target_profile.strip().lower()
+        existing_line = find_profile_line_number(cfg_path, norm_name)
+        if existing_line is not None:
+            target_line = existing_line
+            print(f"Found existing profile [{norm_name}] in {cfg_path} (line {target_line}).")
+        else:
+            print(f"Profile {norm_name!r} not found in {cfg_path}.")
+            create_new = getattr(args, "yes", False)
+            if not create_new:
+                if not sys.stdin.isatty():
+                    print("Non-interactive session: use --yes to create a new profile.", file=sys.stderr)
+                    return 1
+                try:
+                    ans = input(f"Would you like to create a new profile for {norm_name!r}? [Y/n]: ").strip().lower()
+                    if ans not in ("", "y", "yes"):
+                        print("Aborted.")
+                        return 0
+                    create_new = True
+                except (EOFError, KeyboardInterrupt):
+                    print("\nAborted.")
+                    return 130
+
+            if create_new:
+                desc = f"{norm_name.title()} Shortcuts"
+                match_cls = norm_name
+                turn = 0
+                if sys.stdin.isatty() and not getattr(args, "yes", False):
+                    try:
+                        d_input = input(f"Profile Description [{desc}]: ").strip()
+                        if d_input:
+                            desc = d_input
+                        c_input = input(f"Window Class Regex (match_class) [{match_cls}]: ").strip()
+                        if c_input:
+                            match_cls = c_input
+                        t_input = input("D-pad Turn Angle (0 or 90) [0]: ").strip()
+                        if t_input in ("0", "90", "180", "270"):
+                            turn = int(t_input)
+                    except (EOFError, KeyboardInterrupt):
+                        print("\nAborted.")
+                        return 130
+
+                template = f"""
+# -----------------------------------------------------------------------------
+# Profile: {norm_name.upper()}
+# -----------------------------------------------------------------------------
+[profiles.{norm_name}]
+description = {desc!r}
+match_class = {match_cls!r}
+turn = {turn}
+
+[profiles.{norm_name}.buttons]
+# Face buttons
+A = "Space"
+B = "Enter"
+X = "PageUp"
+Y = "PageDown"
+
+# Shoulders
+L = "Tab"
+R = "Escape"
+L2 = "LeftShift"
+R2 = "LeftCtrl"
+
+# Center & Bottom
+SELECT = "Esc"
+START = "Enter"
+STAR = "None"
+HOME = "None"
+
+# D-Pad
+UP = "Up"
+DOWN = "Down"
+LEFT = "Left"
+RIGHT = "Right"
+"""
+                existing_text = cfg_path.read_text(encoding="utf-8")
+                if not existing_text.endswith("\n"):
+                    existing_text += "\n"
+                cfg_path.write_text(existing_text + template.lstrip(), encoding="utf-8")
+                print(f"Created new profile [{norm_name}] in {cfg_path}.")
+                target_line = find_profile_line_number(cfg_path, norm_name)
+    else:
+        target_line = 1
+
+    if getattr(args, "no_edit", False):
+        return 0
+
+    editor = getattr(args, "editor", None) or os.environ.get("VISUAL") or os.environ.get("EDITOR") or "nvim"
+    cmd = build_editor_command(editor, cfg_path, target_line)
+    line_info = f" at line {target_line}" if target_line else ""
+    print(f"Opening {cfg_path.name}{line_info} with {cmd[0]}...")
+
+    try:
+        subprocess.run(cmd)
+    except FileNotFoundError:
+        fallback = "nano" if shutil.which("nano") else "vi"
+        fallback_cmd = build_editor_command(fallback, cfg_path, target_line)
+        subprocess.run(fallback_cmd)
+
+    try:
+        load_config(cfg_path)
+        print(f"✓ Configuration syntax is valid ({cfg_path}).")
+    except Exception as exc:
+        print(f"⚠️ Warning: Configuration syntax error in {cfg_path}: {exc}", file=sys.stderr)
+
+    return 0
+
+
 async def _cmd_show(args: argparse.Namespace) -> int:
-    cfg_path = ensure_default_config(args.config)
+    cfg_path = ensure_default_config(getattr(args, "config", None))
     cfg = load_config(cfg_path)
 
     active_win = None
@@ -327,13 +498,14 @@ def build_parser() -> argparse.ArgumentParser:
         "-c",
         "--config",
         type=Path,
-        default=DEFAULT_CONFIG_PATH,
+        default=argparse.SUPPRESS,
         help=f"Path to profiles.toml (default: {DEFAULT_CONFIG_PATH})",
     )
     common_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Enable debug logging",
     )
 
@@ -408,8 +580,43 @@ def build_parser() -> argparse.ArgumentParser:
     p_ble_reset.add_argument("--address", help="Optional BLE MAC address override")
     p_ble_reset.add_argument("--timeout", type=float, default=6.0, help="BLE scan timeout in seconds")
 
-    # init-config
-    sub.add_parser("init-config", help="Create default ~/.config/8bitdo-micro/profiles.toml if missing")
+    # config / edit
+    p_config = sub.add_parser(
+        "config",
+        aliases=["edit", "init-config"],
+        parents=[common_parser],
+        help="Open profiles.toml in your editor, jump to a profile, or create a new profile template",
+    )
+    p_config.add_argument(
+        "profile",
+        nargs="?",
+        help="Profile name to jump to or create (e.g. 'youtube', 'spotify'). If omitted, opens config file at top.",
+    )
+    p_config.add_argument(
+        "--path",
+        action="store_true",
+        help="Print path to profiles.toml and exit",
+    )
+    p_config.add_argument(
+        "--list",
+        action="store_true",
+        help="List all configured profiles with line numbers and exit",
+    )
+    p_config.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Automatically confirm new profile creation without prompting",
+    )
+    p_config.add_argument(
+        "--editor",
+        help="Override editor command (default: $VISUAL, $EDITOR, or nvim)",
+    )
+    p_config.add_argument(
+        "--no-edit",
+        action="store_true",
+        help="Do not launch editor after creating/validating profile (useful for scripts)",
+    )
 
     # install-service
     p_svc = sub.add_parser("install-service", help="Generate systemd --user service and show udev setup")
@@ -474,7 +681,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.DEBUG if getattr(args, "verbose", False) else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
     )
@@ -482,10 +689,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command in ("show", "hud", "diagram"):
             return asyncio.run(_cmd_show(args))
-        if args.command == "init-config":
-            path = ensure_default_config(args.config)
-            print(f"Configuration ready at: {path}")
-            return 0
+        if args.command in ("config", "edit", "init-config"):
+            return _cmd_config(args)
         if args.command == "install-service":
             return _cmd_install_service(args)
         if args.command == "status":

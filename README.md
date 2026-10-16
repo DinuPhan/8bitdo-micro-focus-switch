@@ -103,11 +103,31 @@ That's it! As you switch between your terminal, YouTube, and Anki, your controll
 
 ---
 
-## Customizing Mappings & Adding New Apps
+## Customizing Mappings & Adding New Apps (`config`)
 
-All profiles live in a simple TOML file: `~/.config/8bitdo-micro/profiles.toml`.
+All profiles live in `~/.config/8bitdo-micro/profiles.toml`. You can manage and edit your profiles effortlessly using the `config` command:
 
-To add a new app (for example, Spotify or VS Code), just add a new block:
+```bash
+# 1. Open the configuration file in your editor ($EDITOR or Neovim):
+8bitdo-micro-focus-switch config
+
+# 2. Jump directly to an existing profile to tweak its buttons:
+8bitdo-micro-focus-switch config youtube
+8bitdo-micro-focus-switch config agy
+
+# 3. Add a new app profile (e.g. Spotify, Discord, VS Code):
+8bitdo-micro-focus-switch config spotify
+# -> If the profile doesn't exist yet, it asks to create it, generates a clean
+#    starter template with all 16 buttons, merges it into profiles.toml,
+#    and opens your editor directly at the new section!
+
+# 4. List all configured profiles with line numbers:
+8bitdo-micro-focus-switch config --list
+```
+
+### Profile Example
+
+To add or customize an app, a profile looks like this:
 
 ```toml
 [profiles.spotify]

@@ -370,7 +370,14 @@ def load_config(path: Path | None = None) -> AppConfig:
     for prof_name, prof_data in raw.get("profiles", {}).items():
         if not isinstance(prof_data, dict):
             continue
-        raw_buttons = prof_data.get("buttons", {})
+        raw_buttons = dict(prof_data.get("buttons", {}))
+        for k, v in prof_data.items():
+            if k not in ("buttons", "description", "match_class", "match_title", "turn"):
+                try:
+                    norm_k = normalize_button_name(k)
+                    raw_buttons.setdefault(norm_k, v)
+                except ValueError:
+                    pass
         buttons: dict[str, ButtonAction] = {}
         for btn_key, btn_spec in raw_buttons.items():
             norm_btn = normalize_button_name(btn_key)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from evdev import ecodes
+import pytest
 
 from eightbitdo_micro_focus_switch.config import DEFAULT_TOML_CONTENT, load_config
 from eightbitdo_micro_focus_switch.daemon import FocusSwitchDaemon
@@ -270,4 +271,48 @@ def test_cli_show_command(tmp_path: Path) -> None:
     assert ret_html == 0
     assert out_html.exists()
     assert "<!DOCTYPE html>" in out_html.read_text(encoding="utf-8")
+
+
+def test_cli_config_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from eightbitdo_micro_focus_switch.cli import main
+
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+
+    # 1. Test --path
+    ret = main(["--config", str(cfg_file), "config", "--path"])
+    assert ret == 0
+    assert str(cfg_file) in capsys.readouterr().out
+
+    # 2. Test --list
+    ret = main(["--config", str(cfg_file), "config", "--list"])
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "youtube" in out
+    assert "line" in out
+
+    # 3. Test jumping to existing profile with --no-edit
+    ret = main(["--config", str(cfg_file), "config", "youtube", "--no-edit"])
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "Found existing profile [youtube]" in out
+
+    # 4. Test creating new profile with --yes --no-edit
+    ret = main(["--config", str(cfg_file), "config", "discord", "--yes", "--no-edit"])
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "Created new profile [discord]" in out
+
+    # Verify 'discord' is now in config and valid
+    reloaded = load_config(cfg_file)
+    assert "discord" in reloaded.profiles
+    assert reloaded.profiles["discord"].match_class == "discord"
+    assert reloaded.profiles["discord"].buttons["A"].keys == ("SPACE",)
+
+    # 5. Test init-config backward compatibility
+    custom_cfg = tmp_path / "subdir" / "new_profiles.toml"
+    ret_init = main(["--config", str(custom_cfg), "init-config"])
+    assert ret_init == 0
+    assert custom_cfg.exists()
+
 

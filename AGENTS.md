@@ -110,8 +110,13 @@ When the user asks to support a new app (e.g., *"Make a profile for Obsidian"*):
    ```
 2. **Draft the profile**:
    Identify the app's top 16 shortcuts and choose a sensible D-pad orientation (`turn = 0` horizontal, or `turn = 90` vertical).
-3. **Append to `~/.config/8bitdo-micro/profiles.toml`**:
-   Add the new `[profiles.<app_name>]` block with `match_class` and button assignments.
+3. **Initialize the profile template with `config` (or edit `profiles.toml` directly)**:
+   You can have the CLI generate and merge the template automatically:
+   ```bash
+   8bitdo-micro-focus-switch config <app_name> --yes --no-edit
+   ```
+   Then customize the button chords in `~/.config/8bitdo-micro/profiles.toml`.
+   You can also list all profile locations with `8bitdo-micro-focus-switch config --list`.
 4. **Inspect the visual diagram**:
    Verify the layout and chords visually:
    ```bash
