@@ -16,6 +16,7 @@ import sys
 from .ble import (
     format_snapshot_report,
     read_hardware_snapshot,
+    scan_for_micro_ble_devices,
     write_hardware_profile,
 )
 from .config import DEFAULT_CONFIG_PATH, ensure_default_config, load_config
@@ -492,6 +493,46 @@ async def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _cmd_discover(args: argparse.Namespace) -> int:
+    timeout = getattr(args, "timeout", 4.0)
+    print("=== 8BitDo Micro Discovery & Connectivity Check ===\n")
+
+    # 1. Classic Bluetooth / evdev input devices
+    print("1. Classic Bluetooth HID Devices (/dev/input/event*):")
+    devs = find_micro_input_devices()
+    if not devs:
+        print("   • No 8BitDo Micro paired & connected as HID keyboard right now.")
+        print("     (Make sure slider is at 'K' and controller is paired in Bluetooth settings)")
+    else:
+        for d in devs:
+            print(
+                f"   ✓ Found {d.path}: {d.name!r} (Vendor=0x{d.info.vendor:04x}, "
+                f"Product=0x{d.info.product:04x}, BT_MAC={d.uniq})"
+            )
+            d.close()
+    print()
+
+    # 2. Over-the-air BLE GATT peripherals
+    print("2. Over-the-Air BLE GATT Peripherals ('80EL'):")
+    print(f"   Scanning 2.4GHz BLE advertisements for {timeout:.1f}s ...")
+    try:
+        ble_devs = await scan_for_micro_ble_devices(timeout=timeout)
+        if not ble_devs:
+            print("   • No '80EL' BLE peripherals detected nearby.")
+            print("     (Ensure controller is powered on and within range)")
+        else:
+            for b in ble_devs:
+                rssi_str = f"RSSI={b.rssi} dBm" if b.rssi is not None else ""
+                print(f"   ✓ Found {b.name!r} at BLE_MAC={b.address} ({rssi_str})")
+    except Exception as exc:
+        print(f"   BLE scan error: {exc}")
+
+    print("\nSummary:")
+    print(" • Controller discovery is 100% dynamic: no MAC addresses or event paths are hard-coded.")
+    print(" • Any 8BitDo Micro will be auto-detected upon pairing and powering on.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument(
@@ -529,6 +570,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("--ble", action="store_true", help="Also query live hardware state over BLE GATT")
     p_status.add_argument("--address", help="Optional BLE MAC address override (e.g. E4:17:D8:D8:52:02)")
     p_status.add_argument("--timeout", type=float, default=6.0, help="BLE scan timeout in seconds")
+
+    # discover / scan
+    p_disc = sub.add_parser(
+        "discover",
+        aliases=["scan"],
+        parents=[common_parser],
+        help="Scan and list all connected and nearby 8BitDo Micro controllers (HID + BLE)",
+    )
+    p_disc.add_argument("--timeout", type=float, default=4.0, help="BLE scan timeout in seconds")
 
     # daemon
     p_daemon = sub.add_parser(
@@ -579,6 +629,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ble_reset.add_argument("--address", help="Optional BLE MAC address override")
     p_ble_reset.add_argument("--timeout", type=float, default=6.0, help="BLE scan timeout in seconds")
+
+    p_ble_scan = ble_sub.add_parser("scan", help="Scan for nearby 8BitDo Micro BLE GATT endpoints")
+    p_ble_scan.add_argument("--timeout", type=float, default=4.0, help="Scan timeout in seconds")
 
     # config / edit
     p_config = sub.add_parser(
@@ -687,6 +740,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        if args.command in ("discover", "scan"):
+            return asyncio.run(_cmd_discover(args))
         if args.command in ("show", "hud", "diagram"):
             return asyncio.run(_cmd_show(args))
         if args.command in ("config", "edit", "init-config"):
@@ -698,6 +753,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "daemon":
             return asyncio.run(_cmd_daemon(args))
         if args.command == "ble":
+            if args.ble_command in ("scan", "discover"):
+                return asyncio.run(_cmd_discover(args))
             if args.ble_command == "read":
                 return asyncio.run(_cmd_ble_read(args))
             if args.ble_command == "write":

@@ -316,3 +316,20 @@ def test_cli_config_command(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert custom_cfg.exists()
 
 
+def test_cli_discover_command(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from eightbitdo_micro_focus_switch import cli
+    from eightbitdo_micro_focus_switch.ble import DiscoveredMicroBle
+
+    async def _mock_scan(timeout: float = 4.0) -> list[DiscoveredMicroBle]:
+        return [DiscoveredMicroBle(name="80EL", address="AA:BB:CC:DD:EE:FF", rssi=-42, device=None)]  # type: ignore
+
+    monkeypatch.setattr(cli, "scan_for_micro_ble_devices", _mock_scan)
+    ret = cli.main(["discover", "--timeout", "1.0"])
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "8BitDo Micro Discovery & Connectivity Check" in out
+    assert "AA:BB:CC:DD:EE:FF" in out
+    assert "RSSI=-42 dBm" in out
+
+
+

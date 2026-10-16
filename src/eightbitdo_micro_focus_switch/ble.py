@@ -46,6 +46,27 @@ class MicroBleSnapshot:
     profile: MicroHardwareProfile
 
 
+@dataclass(slots=True)
+class DiscoveredMicroBle:
+    """A discovered 8BitDo Micro BLE GATT peripheral."""
+
+    name: str
+    address: str
+    rssi: int | None
+    device: BLEDevice
+
+
+async def scan_for_micro_ble_devices(timeout: float = 4.0) -> list[DiscoveredMicroBle]:
+    """Scan for all nearby 8BitDo Micro ('80EL') BLE GATT devices."""
+    found: list[DiscoveredMicroBle] = []
+    discovered = await BleakScanner.discover(timeout=timeout, return_adv=True)
+    for address, (dev, adv) in discovered.items():
+        name = dev.name or adv.local_name or ""
+        if BLE_DEVICE_NAME.lower() in name.lower():
+            found.append(DiscoveredMicroBle(name=name, address=address, rssi=adv.rssi, device=dev))
+    return sorted(found, key=lambda d: d.rssi or -100, reverse=True)
+
+
 async def find_micro_ble_device(
     address: str | None = None,
     timeout: float = 6.0,
