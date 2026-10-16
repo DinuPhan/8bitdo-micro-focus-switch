@@ -464,4 +464,76 @@ def test_visualizer_combos_rendering(tmp_path: Path) -> None:
     assert "Super + K" in svg
 
 
+def test_daemon_in_process_reload(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "profiles.toml"
+    content_v1 = """\
+[general]
+backend = "uinput"
+fallback_profile = "test"
+
+[profiles.test]
+description = "Test v1"
+turn = 0
+[profiles.test.buttons]
+A = "Space"
+"""
+    cfg_file.write_text(content_v1, encoding="utf-8")
+    cfg1 = load_config(cfg_file)
+    daemon = FocusSwitchDaemon(cfg1, config_path=cfg_file)
+    assert daemon.active_profile.turn == 0
+
+    content_v2 = """\
+[general]
+backend = "uinput"
+fallback_profile = "test"
+
+[profiles.test]
+description = "Test v2"
+turn = 90
+[profiles.test.buttons]
+A = "Enter"
+"""
+    cfg_file.write_text(content_v2, encoding="utf-8")
+    daemon.reload_config()
+    assert daemon.active_profile.turn == 90
+    assert daemon.config.profiles["test"].buttons["A"].keys == ("ENTER",)
+
+
+def test_cli_reload_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from eightbitdo_micro_focus_switch.cli import main
+
+    # 1. Invalid syntax refusal
+    broken = tmp_path / "broken.toml"
+    broken.write_text("this is invalid toml ::: [[[", encoding="utf-8")
+    rc = main(["--config", str(broken), "reload"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "Invalid configuration" in err
+
+    # 2. Valid config, running daemon
+    valid = tmp_path / "valid.toml"
+    valid.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "eightbitdo_micro_focus_switch.cli.reload_running_daemon",
+        lambda: (True, "Sent reload signal (SIGHUP) to systemd service"),
+    )
+    rc = main(["--config", str(valid), "reload"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Validated configuration syntax" in out
+    assert "Sent reload signal (SIGHUP)" in out
+
+    # 3. Valid config, daemon not running
+    monkeypatch.setattr(
+        "eightbitdo_micro_focus_switch.cli.reload_running_daemon",
+        lambda: (False, "Daemon is not currently running."),
+    )
+    rc = main(["--config", str(valid), "reload"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Daemon is not currently running." in out
+
+
+
 

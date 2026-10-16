@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+import signal
 import evdev
 from evdev import InputDevice, UInput, ecodes
 
@@ -79,10 +80,12 @@ class FocusSwitchDaemon:
         self,
         config: AppConfig,
         *,
+        config_path: Path | None = None,
         backend: str | None = None,
         ble_address: str | None = None,
     ) -> None:
         self.config = config
+        self.config_path = config_path
         self.backend = (backend or config.backend or "uinput").lower()
         self.ble_address = ble_address
         self.active_window = ActiveWindow(window_class="", window_title="")
@@ -96,6 +99,30 @@ class FocusSwitchDaemon:
         # Physical evdev keycode -> active combo button set
         self._held_combos: dict[int, frozenset[str]] = {}
         self._ble_trigger = asyncio.Event()
+
+    def reload_config(self) -> None:
+        """Reload configuration from disk (triggered by SIGHUP or explicit request)."""
+        if self.config_path is None:
+            logger.warning("Cannot reload configuration: config_path not provided to daemon.")
+            return
+        try:
+            from .config import load_config
+            new_cfg = load_config(self.config_path)
+            self.config = new_cfg
+            new_prof = self.config.resolve_profile_for_window(
+                self.active_window.window_class,
+                self.active_window.window_title,
+            )
+            logger.info(
+                "Configuration reloaded from %s! Active profile: %s (turn=%d°)",
+                self.config_path,
+                new_prof.name,
+                new_prof.turn,
+            )
+            self.active_profile = new_prof
+            self._ble_trigger.set()
+        except Exception as exc:
+            logger.error("Failed to reload configuration from %s: %s", self.config_path, exc)
 
     def _on_focus_change(self, window: ActiveWindow) -> None:
         self.active_window = window
@@ -415,6 +442,12 @@ class FocusSwitchDaemon:
 
     async def run(self) -> None:
         """Run the Hyprland focus watcher and the selected remapping backend concurrently."""
+        loop = asyncio.get_running_loop()
+        try:
+            loop.add_signal_handler(signal.SIGHUP, self.reload_config)
+        except (ValueError, NotImplementedError, RuntimeError):
+            pass
+
         tasks: list[asyncio.Task[None]] = []
 
         async def _focus_task() -> None:

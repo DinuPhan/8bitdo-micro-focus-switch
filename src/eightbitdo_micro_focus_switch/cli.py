@@ -78,6 +78,17 @@ async def _cmd_status(args: argparse.Namespace) -> int:
     print(f"Resolved Profile : {matched.name} (turn={matched.turn}°)")
     print()
 
+    print("=== Daemon Background Service ===")
+    if is_systemd_service_active():
+        print("Service Status   : Active (running via systemd --user 8bitdo-micro-focus-switch.service)")
+    else:
+        pids = find_daemon_pids()
+        if pids:
+            print(f"Service Status   : Active (standalone PID(s): {', '.join(map(str, pids))})")
+        else:
+            print("Service Status   : Inactive")
+    print()
+
     print("=== Classic HID Input (/dev/input) ===")
     devs = find_micro_input_devices()
     if not devs:
@@ -185,6 +196,7 @@ async def _cmd_daemon(args: argparse.Namespace) -> int:
 
     daemon = FocusSwitchDaemon(
         cfg,
+        config_path=cfg_path,
         backend=args.backend,
         ble_address=args.address,
     )
@@ -270,6 +282,106 @@ def _cmd_install_udev(args: argparse.Namespace) -> int:
     print(f"  echo '{UDEV_RULE_CONTENT.strip()}' | sudo tee {UDEV_RULE_PATH}")
     print("  sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput")
     return 1
+
+
+def is_systemd_service_active() -> bool:
+    """Return True if 8bitdo-micro-focus-switch.service is active under systemd --user."""
+    try:
+        proc = subprocess.run(
+            ["systemctl", "--user", "is-active", "--quiet", "8bitdo-micro-focus-switch.service"],
+            capture_output=True,
+            check=False,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def find_daemon_pids() -> list[int]:
+    """Find process IDs of any running standalone 8bitdo-micro-focus-switch daemon instances."""
+    pids: list[int] = []
+    my_pid = os.getpid()
+    proc_dir = Path("/proc")
+    if not proc_dir.exists():
+        return pids
+    for entry in proc_dir.iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == my_pid:
+            continue
+        try:
+            cmdline = (entry / "cmdline").read_bytes().split(b"\x00")
+            cmd_strs = [c.decode("utf-8", "replace") for c in cmdline if c]
+            cmd_full = " ".join(cmd_strs)
+            if "8bitdo-micro-focus-switch" in cmd_full and "daemon" in cmd_strs:
+                pids.append(pid)
+        except (OSError, PermissionError):
+            continue
+    return pids
+
+
+def reload_running_daemon() -> tuple[bool, str]:
+    """Send SIGHUP to running daemon instances (via systemd or process signals)."""
+    import signal
+
+    reloaded_any = False
+    details: list[str] = []
+
+    # 1. Systemd user service
+    if is_systemd_service_active():
+        try:
+            res = subprocess.run(
+                ["systemctl", "--user", "kill", "-s", "HUP", "8bitdo-micro-focus-switch.service"],
+                capture_output=True,
+                check=False,
+            )
+            if res.returncode == 0:
+                reloaded_any = True
+                details.append("systemd service (8bitdo-micro-focus-switch.service)")
+        except Exception:
+            pass
+
+    # 2. Standalone daemon processes (if not managed by systemd)
+    if not reloaded_any:
+        pids = find_daemon_pids()
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGHUP)
+                reloaded_any = True
+                details.append(f"daemon PID {pid}")
+            except Exception:
+                pass
+
+    if reloaded_any:
+        return True, f"Sent reload signal (SIGHUP) to {', '.join(details)}."
+    return False, "Daemon is not currently running."
+
+
+def _cmd_reload(args: argparse.Namespace) -> int:
+    cfg_path = ensure_default_config(getattr(args, "config", None))
+    # 1. Validate configuration syntax first
+    try:
+        cfg = load_config(cfg_path)
+    except Exception as exc:
+        print(f"Error: Invalid configuration in {cfg_path}:\n  {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Validated configuration syntax: {cfg_path}")
+    active_profs = ", ".join(cfg.profiles.keys())
+    print(f"Configured profiles ({len(cfg.profiles)}): {active_profs}")
+
+    success, msg = reload_running_daemon()
+    if success:
+        print(f"✓ {msg}")
+        return 0
+    else:
+        print(f"ℹ {msg}")
+        print("  To start the background service:")
+        print("    systemctl --user start 8bitdo-micro-focus-switch.service")
+        print("  Or run in foreground:")
+        print("    8bitdo-micro-focus-switch daemon")
+        return 0
 
 
 def find_profile_line_number(config_path: Path, profile_name: str) -> int | None:
@@ -438,6 +550,9 @@ RIGHT = "Right"
     try:
         load_config(cfg_path)
         print(f"✓ Configuration syntax is valid ({cfg_path}).")
+        success, msg = reload_running_daemon()
+        if success:
+            print(f"✓ {msg}")
     except Exception as exc:
         print(f"⚠️ Warning: Configuration syntax error in {cfg_path}: {exc}", file=sys.stderr)
 
@@ -730,6 +845,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not launch editor after creating/validating profile (useful for scripts)",
     )
 
+    # reload
+    sub.add_parser(
+        "reload",
+        parents=[common_parser],
+        help="[Daily] Reload profiles.toml into the running daemon (zero downtime)",
+    )
+
     # install-service
     p_svc = sub.add_parser(
         "install-service",
@@ -814,6 +936,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_cmd_show(args))
         if args.command in ("config", "edit", "init-config"):
             return _cmd_config(args)
+        if args.command == "reload":
+            return _cmd_reload(args)
         if args.command == "install-service":
             return _cmd_install_service(args)
         if args.command == "install-udev":

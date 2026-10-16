@@ -137,11 +137,11 @@ When the user asks to support a new app (e.g., *"Make a profile for Obsidian"*):
    ```bash
    8bitdo-micro-focus-switch show <app_name> -o /tmp/diagram.svg
    ```
-5. **Restart or reload the service**:
-   If the user has the systemd service running:
+5. **Reload the running daemon (zero downtime)**:
    ```bash
-   systemctl --user restart 8bitdo-micro-focus-switch.service
+   8bitdo-micro-focus-switch reload
    ```
+   *(Note: Editing via `8bitdo-micro-focus-switch config` automatically reloads the running daemon when you exit the editor!)*
 
 ### 3.2 Testing Changes
 

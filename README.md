@@ -114,16 +114,19 @@ These are the primary commands you will use daily:
 # 3. Add a new app profile (e.g. Spotify, Discord, VS Code):
 8bitdo-micro-focus-switch config spotify
 
-# 4. Check Hyprland focus status and connected controllers:
+# 4. Reload profiles into the running daemon (zero downtime, no disconnect):
+8bitdo-micro-focus-switch reload
+
+# 5. Check Hyprland focus status and connected controllers:
 8bitdo-micro-focus-switch status
 
-# 5. Scan for nearby controllers:
+# 6. Scan for nearby controllers:
 8bitdo-micro-focus-switch discover
 ```
 
 ---
 
-## Customizing Mappings & Adding New Apps (`config`)
+## Customizing Mappings & Adding New Apps (`config` & `reload`)
 
 All profiles live in `~/.config/8bitdo-micro/profiles.toml`. You can manage and edit your profiles effortlessly using the `config` command:
 
@@ -143,6 +146,12 @@ All profiles live in `~/.config/8bitdo-micro/profiles.toml`. You can manage and 
 
 # 4. List all configured profiles with line numbers:
 8bitdo-micro-focus-switch config --list
+
+# 5. Reload the running daemon immediately (zero downtime):
+8bitdo-micro-focus-switch reload
+```
+
+> **Automatic In-Process Reload**: When you edit profiles via `8bitdo-micro-focus-switch config`, saving and exiting your editor automatically validates syntax and sends a `SIGHUP` reload signal to the running daemon. Your controller never disconnects, and virtual keyboard grabs remain active.
 ```
 
 ### Profile Example
