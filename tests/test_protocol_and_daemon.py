@@ -808,6 +808,70 @@ match_class = "firefox"
     assert unmatched.name != "global"
 
 
+def test_inline_comments_and_visualizer_tooltips(tmp_path: Path) -> None:
+    from eightbitdo_micro_focus_switch.config import extract_toml_inline_comments
+    from eightbitdo_micro_focus_switch.visualizer import generate_svg_diagram, generate_html_viewer
+    from eightbitdo_micro_focus_switch.recorder import update_toml_binding
+
+    toml_doc = """\
+[general]
+fallback_profile = "media"
+
+[profiles.global.combos]
+"L+R" = ["Super", "K"]               # Global app launcher
+"Select+Start" = "exec:echo hi"      # Global scratchpad
+
+[profiles.media]
+description = "Media player"
+turn = 0
+
+[profiles.media.buttons]
+A = "Space"                          # Play / Pause toggle
+B = "M"                              # Mute audio
+
+[profiles.media.combos]
+"L2+Left" = ["LEFTALT", "LEFT"]      # Previous chapter
+"""
+    # 1. Test extraction directly
+    comments = extract_toml_inline_comments(toml_doc)
+    assert comments["media"]["buttons"]["A"] == "Play / Pause toggle"
+    assert comments["media"]["buttons"]["B"] == "Mute audio"
+    assert comments["media"]["combos"][frozenset({"L2", "LEFT"})] == "Previous chapter"
+    assert comments["global"]["combos"][frozenset({"L", "R"})] == "Global app launcher"
+
+    # 2. Test config loading and inheritance of descriptions
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+    media = cfg.get_profile("media")
+
+    assert media.buttons["A"].description == "Play / Pause toggle"
+    assert media.buttons["B"].description == "Mute audio"
+    assert media.combos[frozenset({"L2", "LEFT"})].description == "Previous chapter"
+    # Inherited global combo preserves its description
+    assert media.combos[frozenset({"L", "R"})].description == "Global app launcher"
+
+    # 3. Test SVG diagram generation includes tooltips (<title>) and subtitles
+    svg = generate_svg_diagram(media)
+    assert "<title>A: Space — Play / Pause toggle</title>" in svg
+    assert "<title>B: M — Mute audio</title>" in svg
+    assert "Play / Pause toggle" in svg
+    assert "Mute audio" in svg
+    assert "Global app launcher" in svg
+    assert "Previous chapter" in svg
+
+    # 4. Test HTML viewer contains both SVG and tooltips
+    html_out = generate_html_viewer(cfg.profiles, "media")
+    assert "<title>A: Space — Play / Pause toggle</title>" in html_out
+    assert ".callout-card" in html_out
+    assert ".combo-chip" in html_out
+
+    # 5. Test update_toml_binding preserves existing inline comments
+    updated = update_toml_binding(toml_doc, "media", "A", ["Enter"])
+    assert "A = \"Enter\"  # Play / Pause toggle" in updated
+
+
+
 
 
 

@@ -154,17 +154,27 @@ def generate_svg_diagram(profile: ProfileConfig) -> str:
         action = profile.buttons.get(logical_key)
         action_text = html.escape(_format_action_text(action))
         safe_label = html.escape(label)
+        has_desc = bool(action and action.description)
+        tooltip_str = f"{label}: {action_text} — {action.description}" if has_desc and action else f"{label}: {action_text}"
+        safe_tooltip = html.escape(tooltip_str)
 
         pts = f"{p0[0]},{p0[1]} {p1[0]},{p1[1]} {p2[0]},{p2[1]} {p3[0]},{p3[1]}"
         lines.append(f'  <polyline points="{pts}" fill="none" stroke="{col}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />')
         lines.append(f'  <circle cx="{p0[0]}" cy="{p0[1]}" r="4.5" fill="{col}" filter="url(#glow)" />')
 
         bx, by = p3[0] - 250, p3[1] - 18
-        lines.append(f'  <g transform="translate({bx},{by})">')
+        lines.append(f'  <g class="callout-card" transform="translate({bx},{by})">')
+        lines.append(f'    <title>{safe_tooltip}</title>')
         lines.append('    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />')
         lines.append(f'    <rect x="6" y="6" width="68" height="24" rx="5" fill="{col}" fill-opacity="0.18" stroke="{col}" stroke-width="1" />')
         lines.append(f'    <text x="40" y="22" text-anchor="middle" fill="{col}" font-size="11" font-weight="bold">{safe_label}</text>')
-        lines.append(f'    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">{action_text}</text>')
+        if has_desc and action and action.description:
+            desc_short = action.description if len(action.description) <= 22 else action.description[:21] + "…"
+            safe_desc = html.escape(desc_short)
+            lines.append(f'    <text x="84" y="17" text-anchor="start" fill="#cdd6f4" font-size="11" font-weight="bold">{action_text}</text>')
+            lines.append(f'    <text x="84" y="29" text-anchor="start" fill="#a6adc8" font-size="9.5">{safe_desc}</text>')
+        else:
+            lines.append(f'    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">{action_text}</text>')
         lines.append('  </g>')
 
     # Render Right Callouts
@@ -174,17 +184,27 @@ def generate_svg_diagram(profile: ProfileConfig) -> str:
         action = profile.buttons.get(logical_key)
         action_text = html.escape(_format_action_text(action))
         safe_label = html.escape(label)
+        has_desc = bool(action and action.description)
+        tooltip_str = f"{label}: {action_text} — {action.description}" if has_desc and action else f"{label}: {action_text}"
+        safe_tooltip = html.escape(tooltip_str)
 
         pts = f"{p0[0]},{p0[1]} {p1[0]},{p1[1]} {p2[0]},{p2[1]} {p3[0]},{p3[1]}"
         lines.append(f'  <polyline points="{pts}" fill="none" stroke="{col}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />')
         lines.append(f'  <circle cx="{p0[0]}" cy="{p0[1]}" r="4.5" fill="{col}" filter="url(#glow)" />')
 
         bx, by = p3[0], p3[1] - 18
-        lines.append(f'  <g transform="translate({bx},{by})">')
+        lines.append(f'  <g class="callout-card" transform="translate({bx},{by})">')
+        lines.append(f'    <title>{safe_tooltip}</title>')
         lines.append('    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />')
         lines.append(f'    <rect x="6" y="6" width="68" height="24" rx="5" fill="{col}" fill-opacity="0.18" stroke="{col}" stroke-width="1" />')
         lines.append(f'    <text x="40" y="22" text-anchor="middle" fill="{col}" font-size="11" font-weight="bold">{safe_label}</text>')
-        lines.append(f'    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">{action_text}</text>')
+        if has_desc and action and action.description:
+            desc_short = action.description if len(action.description) <= 22 else action.description[:21] + "…"
+            safe_desc = html.escape(desc_short)
+            lines.append(f'    <text x="84" y="17" text-anchor="start" fill="#cdd6f4" font-size="11" font-weight="bold">{action_text}</text>')
+            lines.append(f'    <text x="84" y="29" text-anchor="start" fill="#a6adc8" font-size="9.5">{safe_desc}</text>')
+        else:
+            lines.append(f'    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">{action_text}</text>')
         lines.append('  </g>')
 
     # Combos & Chords Footer
@@ -198,17 +218,33 @@ def generate_svg_diagram(profile: ProfileConfig) -> str:
         for combo_btns, act in profile.combos.items():
             btn_display = " + ".join(BUTTON_METADATA.get(b, (b, ""))[0] for b in sorted(combo_btns))
             act_display = _format_action_text(act)
-            chip_text = f"{btn_display}  ➔  {act_display}"
-            chip_w = max(170, len(chip_text) * 8 + 24)
+            has_desc = bool(act and act.description)
+            if has_desc and act and act.description:
+                desc_short = act.description if len(act.description) <= 18 else act.description[:17] + "…"
+                tooltip_str = f"{btn_display} ➔ {act_display}: {act.description}"
+                chip_text_for_w = f"{btn_display}  ➔  {act_display}  •  {desc_short}"
+            else:
+                desc_short = ""
+                tooltip_str = f"{btn_display} ➔ {act_display}"
+                chip_text_for_w = f"{btn_display}  ➔  {act_display}"
+
+            safe_tooltip = html.escape(tooltip_str)
+            chip_w = max(170, len(chip_text_for_w) * 7.5 + 24)
             if chip_x + chip_w > 908:
                 break
             arrow_x = 12 + len(btn_display) * 7 + 4
             act_x = arrow_x + 18
-            lines.append(f'    <g transform="translate({chip_x}, 12)">')
+            lines.append(f'    <g class="combo-chip" transform="translate({chip_x}, 12)">')
+            lines.append(f'      <title>{safe_tooltip}</title>')
             lines.append(f'      <rect width="{chip_w}" height="32" rx="6" fill="#1e1e2e" stroke="#313244" stroke-width="1" />')
             lines.append(f'      <text x="12" y="21" fill="#f9e2af" font-size="11" font-weight="bold">{html.escape(btn_display)}</text>')
             lines.append(f'      <text x="{arrow_x}" y="21" fill="#89b4fa" font-size="11">➔</text>')
             lines.append(f'      <text x="{act_x}" y="21" fill="#cdd6f4" font-size="11" font-weight="bold">{html.escape(act_display)}</text>')
+            if desc_short:
+                bullet_x = act_x + len(act_display) * 7 + 8
+                desc_x = bullet_x + 10
+                lines.append(f'      <text x="{bullet_x}" y="21" fill="#6c7086" font-size="10">•</text>')
+                lines.append(f'      <text x="{desc_x}" y="21" fill="#a6adc8" font-size="10">{html.escape(desc_short)}</text>')
             lines.append('    </g>')
             chip_x += chip_w + 10
         lines.append('  </g>')
@@ -296,6 +332,20 @@ def generate_html_viewer(profiles: dict[str, ProfileConfig], active_profile_name
       width: 100%;
       height: auto;
       display: block;
+    }}
+    .callout-card {{
+      cursor: pointer;
+    }}
+    .callout-card:hover rect:first-of-type {{
+      stroke: #89b4fa;
+      stroke-width: 1.5;
+    }}
+    .combo-chip {{
+      cursor: pointer;
+    }}
+    .combo-chip:hover rect:first-of-type {{
+      stroke: #fab387;
+      stroke-width: 1.5;
     }}
   </style>
 </head>

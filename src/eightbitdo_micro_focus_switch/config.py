@@ -32,9 +32,10 @@ class ButtonAction:
     evdev_codes: tuple[int, ...] = ()
     hid_usages: tuple[int, int, int, int] = (0, 0, 0, 0)
     exec_cmd: str | None = None
+    description: str | None = None
 
     @classmethod
-    def from_raw(cls, raw: str | list[Any] | dict[str, Any]) -> ButtonAction:
+    def from_raw(cls, raw: str | list[Any] | dict[str, Any], description: str | None = None) -> ButtonAction:
         exec_cmd: str | None = None
         raw_keys: list[str | int] = []
 
@@ -49,6 +50,10 @@ class ButtonAction:
         elif isinstance(raw, dict):
             if "exec" in raw and raw["exec"]:
                 exec_cmd = str(raw["exec"]).strip()
+            if "description" in raw and raw["description"] and not description:
+                description = str(raw["description"]).strip()
+            elif "desc" in raw and raw["desc"] and not description:
+                description = str(raw["desc"]).strip()
             k_val = raw.get("keys", raw.get("key", []))
             if isinstance(k_val, str):
                 raw_keys = [k.strip() for k in k_val.split("+") if k.strip()]
@@ -78,6 +83,7 @@ class ButtonAction:
             evdev_codes=tuple(evdev_codes),
             hid_usages=(padded_hid[0], padded_hid[1], padded_hid[2], padded_hid[3]),
             exec_cmd=exec_cmd,
+            description=description,
         )
 
 
@@ -237,8 +243,8 @@ combo_timeout_ms = 50
 description = "Global shortcuts inherited by all profiles unless overridden"
 
 [profiles.global.combos]
-"L+R" = ["Super", "K"]               # L1 + R1 -> Super + K (Command palette / app launcher)
-"Select+Start" = "exec:hyprctl dispatch togglespecialworkspace"
+"L+R" = ["Super", "K"]               # Command palette / app launcher
+"Select+Start" = "exec:hyprctl dispatch togglespecialworkspace" # Toggle scratchpad
 
 [profiles.agy]
 description = "Antigravity (agy) / Terminal Coding Profile (captured from controller)"
@@ -248,21 +254,21 @@ turn = 0
 
 [profiles.agy.combos]
 # Simultaneous button chords: pressing both buttons within 40ms emits this action instead of solo keys
-"L+R" = ["LEFTMETA", "K"]
+"L+R" = ["LEFTMETA", "K"]             # Command palette
 
 [profiles.agy.buttons]
-A = "BACKSPACE"
-B = "PAGEDOWN"
-X = "PAGEUP"
-Y = ["LEFTSHIFT", "ENTER"]
-L = "TAB"
-R = ["LEFTCTRL", "LEFTSHIFT", "D"]
-L2 = "LEFTSHIFT"
-R2 = "ENTER"
-SELECT = "ESC"
-START = ["2", "LEFTSHIFT"]
-STAR = "SPACE"
-HOME = "SLASH"
+A = "BACKSPACE"                  # Backspace / Delete
+B = "PAGEDOWN"                   # Page down
+X = "PAGEUP"                     # Page up
+Y = ["LEFTSHIFT", "ENTER"]       # Multiline newline
+L = "TAB"                        # Tab completion
+R = ["LEFTCTRL", "LEFTSHIFT", "D"] # Debug / duplicate
+L2 = "LEFTSHIFT"                 # Shift modifier
+R2 = "ENTER"                     # Submit prompt
+SELECT = "ESC"                   # Cancel / Normal mode
+START = ["2", "LEFTSHIFT"]       # @ file mention
+STAR = "SPACE"                   # Space
+HOME = "SLASH"                   # / command
 UP = "UP"
 DOWN = "DOWN"
 LEFT = "LEFT"
@@ -275,22 +281,22 @@ match_title = "Anki"
 turn = 0
 
 [profiles.anki.buttons]
-A = "2"
-B = "1"
+A = "2"                          # Good
+B = "1"                          # Again
 X = ["LEFTCTRL", "LEFTSHIFT", "D"]
 Y = ["LEFTCTRL", "LEFTALT", "N"]
-L = "SPACE"
-R = "4"
+L = "SPACE"                      # Show answer
+R = "4"                          # Easy
 L2 = "L"
 R2 = "R"
-SELECT = "E"
-START = "KPASTERISK"
+SELECT = "E"                     # Edit card
+START = "KPASTERISK"             # Mark card
 STAR = "T"
 HOME = "S"
 UP = ["LEFTCTRL", "DELETE"]
 DOWN = ["LEFTSHIFT", "2"]
-LEFT = ["LEFTCTRL", "Z"]
-RIGHT = "KPMINUS"
+LEFT = ["LEFTCTRL", "Z"]         # Undo
+RIGHT = "KPMINUS"                # Bury card
 
 [profiles.youtube]
 description = "YouTube Video Playback in Browser (native player shortcuts)"
@@ -299,22 +305,22 @@ match_title = ".*(YouTube|- YouTube).*"
 turn = 0
 
 [profiles.youtube.buttons]
-A = "SPACE"
-B = "M"
-X = "F"
-Y = "C"
-L = "J"
-R = "L"
-L2 = ["LEFTSHIFT", "COMMA"]
-R2 = ["LEFTSHIFT", "DOT"]
-SELECT = "ESC"
-START = ["LEFTSHIFT", "N"]
-STAR = "T"
-HOME = "I"
-UP = "UP"
-DOWN = "DOWN"
-LEFT = "LEFT"
-RIGHT = "RIGHT"
+A = "SPACE"                      # Play / Pause
+B = "M"                          # Mute audio
+X = "F"                          # Toggle Fullscreen
+Y = "C"                          # Subtitles / Captions
+L = "J"                          # Seek backward 10s
+R = "L"                          # Seek forward 10s
+L2 = ["LEFTSHIFT", "COMMA"]      # Slow down playback
+R2 = ["LEFTSHIFT", "DOT"]        # Speed up playback
+SELECT = "ESC"                   # Exit Fullscreen
+START = ["LEFTSHIFT", "N"]       # Next video
+STAR = "T"                       # Cinema theater mode
+HOME = "I"                       # Miniplayer
+UP = "UP"                        # Volume up
+DOWN = "DOWN"                    # Volume down
+LEFT = "LEFT"                    # Seek -5s
+RIGHT = "RIGHT"                  # Seek +5s
 
 [profiles.browser]
 description = "Web Browsing / Reading (Firefox, Chromium, Brave, Zen)"
@@ -386,6 +392,81 @@ RIGHT = "F"
 """
 
 
+def extract_toml_inline_comments(text: str) -> dict[str, dict[str, dict[Any, str]]]:
+    """Parse single-line comments placed inline with button and combo mappings in a TOML document.
+
+    Returns:
+        dict mapping lowercase profile name -> {"buttons": {button_name: comment}, "combos": {frozenset: comment}}
+    """
+    result: dict[str, dict[str, dict[Any, str]]] = {}
+    current_section = ""
+    for line in text.splitlines():
+        line_str = line.strip()
+        if not line_str:
+            continue
+        if line_str.startswith("[") and line_str.endswith("]"):
+            current_section = line_str[1:-1].strip()
+            continue
+        if line_str.startswith("#"):
+            continue
+
+        in_single = False
+        in_double = False
+        escape = False
+        comment_idx = -1
+        for i, ch in enumerate(line):
+            if escape:
+                escape = False
+                continue
+            if ch == "\\" and in_double:
+                escape = True
+                continue
+            if ch == '"' and not in_single:
+                in_double = not in_double
+            elif ch == "'" and not in_double:
+                in_single = not in_single
+            elif ch == "#" and not in_single and not in_double:
+                comment_idx = i
+                break
+
+        if comment_idx != -1:
+            code_part = line[:comment_idx].strip()
+            comment_text = line[comment_idx + 1:].strip()
+            if "=" in code_part and comment_text:
+                key_part, _ = code_part.split("=", 1)
+                raw_key = key_part.strip().strip("\"'")
+                parts = [p.strip().strip("\"'") for p in current_section.split(".")]
+                if len(parts) >= 2 and parts[0].lower() == "profiles":
+                    prof_name = parts[1].lower()
+                    sub = parts[2].lower() if len(parts) > 2 else "auto"
+                elif len(parts) >= 1 and parts[0].lower() in ("global", "all"):
+                    prof_name = parts[0].lower()
+                    sub = parts[1].lower() if len(parts) > 1 else "auto"
+                else:
+                    prof_name = parts[0].lower()
+                    sub = parts[1].lower() if len(parts) > 1 else "auto"
+
+                if sub == "combos" or "+" in raw_key:
+                    try:
+                        combo_key = parse_combo_buttons(raw_key)
+                        result.setdefault(prof_name, {}).setdefault("combos", {})[combo_key] = comment_text
+                    except ValueError:
+                        pass
+                else:
+                    try:
+                        btn_key = normalize_button_name(raw_key)
+                        result.setdefault(prof_name, {}).setdefault("buttons", {})[btn_key] = comment_text
+                    except ValueError:
+                        pass
+    return result
+
+
+def _lookup_comments(comments_dict: dict[str, Any], name: str) -> dict[str, dict[Any, str]]:
+    """Case-insensitive comment dictionary lookup for a profile name."""
+    name_lower = name.strip().lower()
+    return comments_dict.get(name_lower, {})
+
+
 def ensure_default_config(path: Path | None = None) -> Path:
     """Create the default profiles.toml if it does not already exist."""
     cfg_path = path if path is not None else DEFAULT_CONFIG_PATH
@@ -404,7 +485,9 @@ def load_config(path: Path | None = None) -> AppConfig:
         else:
             raise FileNotFoundError(f"Configuration file not found: {cfg_path}")
 
-    raw = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+    raw_text = cfg_path.read_text(encoding="utf-8")
+    comments = extract_toml_inline_comments(raw_text)
+    raw = tomllib.loads(raw_text)
     general = raw.get("general", {})
     fallback_profile = str(general.get("fallback_profile", "agy"))
     backend = str(general.get("backend", "uinput")).lower()
@@ -413,6 +496,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     for prof_name, prof_data in raw.get("profiles", {}).items():
         if not isinstance(prof_data, dict):
             continue
+        prof_comments = _lookup_comments(comments, prof_name)
         raw_buttons = dict(prof_data.get("buttons", {}))
         raw_combos = dict(prof_data.get("combos", {}))
         for k, v in prof_data.items():
@@ -433,12 +517,14 @@ def load_config(path: Path | None = None) -> AppConfig:
         buttons: dict[str, ButtonAction] = {}
         for btn_key, btn_spec in raw_buttons.items():
             norm_btn = normalize_button_name(btn_key)
-            buttons[norm_btn] = ButtonAction.from_raw(btn_spec)
+            btn_desc = prof_comments.get("buttons", {}).get(norm_btn)
+            buttons[norm_btn] = ButtonAction.from_raw(btn_spec, description=btn_desc)
 
         combos: dict[frozenset[str], ButtonAction] = {}
         for combo_key, combo_spec in raw_combos.items():
             norm_combo = parse_combo_buttons(combo_key) if not isinstance(combo_key, frozenset) else combo_key
-            combos[norm_combo] = ButtonAction.from_raw(combo_spec)
+            combo_desc = prof_comments.get("combos", {}).get(norm_combo)
+            combos[norm_combo] = ButtonAction.from_raw(combo_spec, description=combo_desc)
 
         combo_timeout_ms = int(prof_data.get("combo_timeout_ms", general.get("combo_timeout_ms", 50)))
 
@@ -479,17 +565,20 @@ def load_config(path: Path | None = None) -> AppConfig:
     # 2. Also support top-level [global] or [all] tables
     for g_key in ("global", "all"):
         g_data = raw.get(g_key, {})
+        g_comments = _lookup_comments(comments, g_key)
         if isinstance(g_data, dict):
             for c_k, c_v in g_data.get("combos", {}).items():
                 try:
                     c_norm = parse_combo_buttons(c_k)
-                    global_combos.setdefault(c_norm, ButtonAction.from_raw(c_v))
+                    c_desc = g_comments.get("combos", {}).get(c_norm)
+                    global_combos.setdefault(c_norm, ButtonAction.from_raw(c_v, description=c_desc))
                 except ValueError:
                     pass
             for b_k, b_v in g_data.get("buttons", {}).items():
                 try:
                     b_norm = normalize_button_name(b_k)
-                    global_buttons.setdefault(b_norm, ButtonAction.from_raw(b_v))
+                    b_desc = g_comments.get("buttons", {}).get(b_norm)
+                    global_buttons.setdefault(b_norm, ButtonAction.from_raw(b_v, description=b_desc))
                 except ValueError:
                     pass
 

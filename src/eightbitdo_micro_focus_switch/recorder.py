@@ -460,6 +460,21 @@ def update_toml_binding(
         m_key = key_re.search(sub_text)
 
         if m_key:
+            # Preserve existing inline comment if present
+            existing_line = m_key.group(0)
+            existing_comment = ""
+            if "#" in existing_line:
+                in_s, in_d = False, False
+                for i_ch, ch in enumerate(existing_line):
+                    if ch == '"' and not in_s:
+                        in_d = not in_d
+                    elif ch == "'" and not in_d:
+                        in_s = not in_s
+                    elif ch == "#" and not in_s and not in_d:
+                        existing_comment = existing_line[i_ch:]
+                        break
+            if existing_comment:
+                line_to_put = f"{line_to_put}  {existing_comment}"
             # Replace existing line
             new_sub_text = sub_text[: m_key.start()] + line_to_put + sub_text[m_key.end() :]
         else:

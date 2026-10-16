@@ -228,6 +228,8 @@ LEFT = "Left"
 RIGHT = "Right"
 ```
 
+> **Inline Descriptions & Tooltips**: Single-line comments (e.g. `# Play / Pause`) written inline with button or combo mappings are automatically parsed and displayed as visual subtitles and interactive hover tooltips in `show` keymap diagrams!
+
 ### Button Names Reference
 
 The 16 physical buttons are named:
