@@ -1,107 +1,174 @@
 # 8bitdo-micro-focus-switch
 
-Focus-aware input remapper daemon (`Hyprland` + `evdev`/`uinput`) and direct BLE GATT (`"80EL"`) hardware profile reader/flasher for the **8BitDo Micro** controller in Keyboard (`K`) mode.
+Turn your **8BitDo Micro** into the ultimate one-handed shortcut remote on Linux. Automatically switches button mappings based on which application is currently in focus — no phone required.
 
-## Features
+---
 
-1. **Direct BLE GATT Hardware Reader & Flasher (`8bitdo-micro-focus-switch ble`)**:
-   - Reverse-engineered from `8BitDo-Ultimate-Software-for-Android.apk` (`libadvance-lib.so` `record_micro` @ `0x1694ac`, `Generate_CustomDataCmd` @ `0x12be58`, `crc16` @ `0x12c678`).
-   - Connects directly to the controller's simultaneous BLE GATT configuration service (`"80EL"`, service `0000FF10-...`, characteristic `0000FF13-...`) **while the controller remains paired and connected to Linux as a Classic HID Keyboard**.
-   - Reads firmware version and the 180-byte `record_micro` mapping table, or flashes/saves any profile (`supermemo`, `anki`, `factory`, or custom profiles from `~/.config/8bitdo-micro/profiles.toml`) without needing an Android phone.
+## Why this exists
 
-2. **Instant `<1ms` Focus-Aware Remapper Daemon (`8bitdo-micro-focus-switch daemon`)**:
-   - Listens to Hyprland's `.socket2.sock` (`activewindow>>`) with zero polling.
-   - Grabs `/dev/input/event*` (`Vendor=0x2dc8, Product=0x9021`) via `EVIOCGRAB` and emits per-application mappings, up to 4-key chords, shell commands (`exec`), and D-pad rotation (`0°`, `90°`, `180°`, `270°`) through a virtual `uinput` keyboard (`--backend uinput`), or automatically reflashes the hardware over BLE GATT on focus change (`--backend ble`).
+The **8BitDo Micro** is a featherlight ($25, 24-gram) controller with 16 buttons. In Keyboard (`K`) mode, it is hands-down the best one-handed macro pad for:
+- Terminal coding & AI prompt workflows
+- Relaxing back while watching YouTube or movies
+- Reviewing Anki flashcards
+- Smooth article and web browsing
 
-## Profiles & Presets
+**The catch with the official setup:** The official 8BitDo mobile app only lets you store one custom profile on the controller at a time. If you want to switch from Anki to YouTube, you normally have to unpair, open an Android app, re-flash the profile, and pair back to your computer.
 
-`8bitdo-micro-focus-switch` comes pre-configured with rules in `~/.config/8bitdo-micro/profiles.toml`:
+**With `8bitdo-micro-focus-switch`:**
+- **Zero-touch automatic switching**: Your controller rebinds itself as you switch windows on your desktop.
+- **Visual Keymap HUD**: Forget which button does what? One command or hotkey pops up a visual diagram showing all 16 buttons with glowing pointers and label badges.
+- **No phone required**: Reads and flashes hardware profiles directly from your Linux machine over Bluetooth.
+- **Instant response**: Sub-millisecond virtual keyboard remapping with multi-key chords and shell command support.
 
-| Profile | Target / Focus | Key Mappings & Actions |
-| :--- | :--- | :--- |
-| **`agy`** *(default)* | Ghostty / Terminal (`agy`) | `Shift+Enter` (newline), `Enter`, `@` (mention files), `/` (slash commands), `Backspace`, `PageUp/Down` |
-| **`youtube`** | Browser watching YouTube | `Space` (play/pause), `M` (mute), `F` (fullscreen), `C` (captions), `J`/`L` (±10s seek), `Shift+,`/`Shift+.` (speed), `Shift+N` (next) |
-| **`anki`** | Anki Flashcards | `1` (Again), `2` (Good), `4` (Easy), `Space` (Show answer), `Ctrl+Shift+D`, `Ctrl+Alt+N`, `Ctrl+Del`, `Ctrl+Z` |
-| **`supermemo`** | SuperMemo / Reading | Matches official 8BitDo SuperMemo hardware mapping |
-| **`browser`** | Web Browsing (Firefox/Brave/Zen) | `PageUp/Down`, `Space`, `Ctrl+T` (new tab), `Ctrl+W` (close), `Ctrl+Shift+T` (reopen), `F5`, Tab switching |
-| **`media`** | VLC, MPV | `Space` (play/pause), `F` (fullscreen), `M` (mute), `[` / `]` (speed), `9` / `0` (volume) |
-| **`factory`** | Factory K-mode | Restores clean single scancodes (`c` through `t`) on all 16 buttons |
+---
 
-## Quick Usage
+## Visual Keymap Diagram & HUD
+
+Pressing buttons shouldn't feel like a memory test. You can display your active keymap at any time:
 
 ```bash
-# Inspect Hyprland focus, /dev/input status, and live BLE GATT hardware profile:
-8bitdo-micro-focus-switch status --ble
-
-# Read and back up the controller's current 180-byte hardware profile:
-8bitdo-micro-focus-switch ble read --save-bin ~/.config/8bitdo-micro/backup.bin
-
-# Flash any profile directly to the controller hardware over BLE (no phone needed):
-8bitdo-micro-focus-switch ble write agy
-8bitdo-micro-focus-switch ble write youtube
-8bitdo-micro-focus-switch ble write anki
-8bitdo-micro-focus-switch ble write supermemo --turn 90
-
-# Reset controller hardware to factory K-mode keys (c..t) for <1ms uinput daemon mode:
-8bitdo-micro-focus-switch ble reset
-
-# Run the focus-aware daemon:
-8bitdo-micro-focus-switch daemon --backend uinput --ensure-factory-ble
-# Or run in BLE GATT hardware-reflash mode (zero root / uinput permissions required):
-8bitdo-micro-focus-switch daemon --backend ble
-```
-
-## Visual Keymap Diagram & HUD (`8bitdo-micro-focus-switch show`)
-
-`8bitdo-micro-focus-switch` includes a visual diagram generator that renders the 8BitDo Micro line-art with color-coded callouts and leader lines pointing directly to each physical button and its remapped chords:
-
-```bash
-# Display the mapping for the currently focused window (auto-detected via Hyprland):
+# Auto-detects your active window and pops up its controller keymap:
 8bitdo-micro-focus-switch show
 
-# Display a specific profile diagram (e.g. YouTube, Anki, AGY):
+# View a specific profile diagram (e.g. YouTube, AGY, Anki):
 8bitdo-micro-focus-switch show youtube
 8bitdo-micro-focus-switch show agy
 
-# Open interactive multi-profile HTML viewer with tabs:
+# Open an interactive viewer in your browser with tabs for every profile:
 8bitdo-micro-focus-switch show --interactive
 
-# Save as SVG or PNG:
+# Save as a self-contained SVG or PNG:
 8bitdo-micro-focus-switch show youtube -o youtube_keymap.svg
 8bitdo-micro-focus-switch show agy --format png -o agy_keymap.png
 ```
 
-### Hyprland Quick HUD Keybinding
+### In-Game Style HUD on Hyprland
 
-Add this to `~/.config/hypr/hyprland.conf` to pop up the current application's controller keymap HUD anytime with a shortcut:
+Add this to your `~/.config/hypr/hyprland.conf` to pop up a floating keymap HUD whenever you press `Super+M`:
 
 ```hyprlang
-# Press Super+M to show 8BitDo Micro keymap for the active window in a floating window:
+# Floating overlay window for the keymap diagram
 windowrulev2 = float, class:^(imv)$, title:^(8bitdo-micro.*)
 bind = $mainMod, M, exec, 8bitdo-micro-focus-switch show --no-wait
 ```
 
-## Running as a Background Service (`systemd --user`)
+---
+
+## Built-in Profiles
+
+Out of the box, `8bitdo-micro-focus-switch` comes configured for popular apps:
+
+| Profile | Trigger Window | What the buttons do |
+| :--- | :--- | :--- |
+| **`agy`** *(default)* | Terminal / Ghostty | `Shift+Enter` (new line), `Enter`, `@` (files), `/` (commands), `Backspace`, `PageUp/Down` |
+| **`youtube`** | Browser watching YouTube | `Space` (play/pause), `M` (mute), `F` (fullscreen), `C` (captions), `J`/`L` (±10s seek), `Shift+,`/`Shift+.` (speed), `Shift+N` (next video) |
+| **`anki`** | Anki Flashcards | `1` (Again), `2` (Good), `4` (Easy), `Space` (Show answer), `Ctrl+Shift+D`, `Ctrl+Alt+N`, `Ctrl+Z` |
+| **`browser`** | Firefox, Chromium, Zen, Brave | `PageUp/Down`, `Space`, `Ctrl+T` (new tab), `Ctrl+W` (close), `Ctrl+Shift+T` (reopen), Tab switching |
+| **`media`** | VLC, MPV | `Space` (play/pause), `F` (fullscreen), `M` (mute), `[` / `]` (speed), `9` / `0` (volume) |
+| **`factory`** | Any | Clean single scancodes (`c` through `t`) on all 16 buttons |
+
+---
+
+## Quick Start
+
+### 1. Installation
+
+Requires Python 3.11+. Install using [`uv`](https://github.com/astral-sh/uv) or `pip`:
 
 ```bash
-# Generate and register user systemd unit:
+git clone https://github.com/DinuPhan/8bitdo-micro-focus-switch.git
+cd 8bitdo-micro-focus-switch
+uv pip install -e .
+```
+
+### 2. Pair Controller
+
+1. Switch the bottom slider on the 8BitDo Micro to **`K`** (Keyboard mode).
+2. Hold the small **Pair** button on the bottom until the LED blinks rapidly.
+3. Pair with your Linux machine in your Bluetooth settings. It will connect as an input keyboard.
+
+### 3. Run the Daemon
+
+```bash
+# Check status and see connected controller + active window:
+8bitdo-micro-focus-switch status
+
+# Start the background focus-switching service:
 8bitdo-micro-focus-switch install-service --backend ble
 systemctl --user daemon-reload
 systemctl --user enable --now 8bitdo-micro-focus-switch.service
-
-# View live focus-switch logs:
-journalctl --user -u 8bitdo-micro-focus-switch.service -f
 ```
 
-## Optional: `<1ms` Virtual Keyboard Mode (`--backend uinput`)
+That's it! As you switch between your terminal, YouTube, and Anki, your controller keys will automatically adapt.
 
-By default, `--backend ble` works out of the box with zero permissions. To enable ultra-low latency (`<1ms`) virtual keyboard remapping via `evdev` + `uinput`:
+---
+
+## Customizing Mappings & Adding New Apps
+
+All profiles live in a simple TOML file: `~/.config/8bitdo-micro/profiles.toml`.
+
+To add a new app (for example, Spotify or VS Code), just add a new block:
+
+```toml
+[profiles.spotify]
+description = "Spotify Music Controller"
+match_class = "spotify"           # Regex matched against window class (from hyprctl)
+turn = 0                          # 0 = normal horizontal, 90 = held vertically
+
+# Button mappings (use friendly names or chords with "+"):
+A = "Space"                       # Play / Pause
+B = "M"                           # Mute
+X = "Ctrl+Right"                  # Next Track
+Y = "Ctrl+Left"                   # Previous Track
+L = "Ctrl+Down"                   # Volume Down
+R = "Ctrl+Up"                     # Volume Up
+SELECT = "Esc"
+START = "exec:playerctl play-pause" # You can even run shell commands!
+STAR = "None"
+HOME = "Super"
+UP = "Up"
+DOWN = "Down"
+LEFT = "Left"
+RIGHT = "Right"
+```
+
+### Button Names Reference
+
+The 16 physical buttons are named:
+- **Face buttons**: `A`, `B`, `X`, `Y`
+- **Shoulders**: `L` (L1), `R` (R1), `L2`, `R2`
+- **Center**: `SELECT` (`-`), `START` (`+`)
+- **Bottom**: `STAR` (★), `HOME` (♥)
+- **D-pad**: `UP`, `DOWN`, `LEFT`, `RIGHT`
+
+### Holding the Controller Vertically (`turn = 90`)
+
+If you like holding the controller vertically in one hand (e.g. for reading or flashcards), set `turn = 90` in your profile. The D-pad automatically rotates so physical "Up" continues pointing in the direction you expect!
+
+---
+
+## Direct Hardware Flasher (No Phone Needed)
+
+If you prefer to flash a profile directly into the controller's onboard memory (so it stays even if you take the controller to another computer):
 
 ```bash
-echo 'KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput", TAG+="uaccess"' \
-  | sudo tee /etc/udev/rules.d/99-8bitdo-micro-uinput.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput
+# Flash any profile directly over Bluetooth:
+8bitdo-micro-focus-switch ble write youtube
+8bitdo-micro-focus-switch ble write agy
+8bitdo-micro-focus-switch ble write anki --turn 90
+
+# Reset controller back to factory keys:
+8bitdo-micro-focus-switch ble reset
 ```
+
+---
+
+## More Resources
+
+- [**ARCHITECTURE.md**](ARCHITECTURE.md): Deep dive into the reverse-engineered 180-byte BLE GATT protocol, packet structures, CRC-16 algorithm, and latency models.
+- [**AGENTS.md**](AGENTS.md): Guidelines and tips for AI coding agents to configure and generate new profiles automatically.
+
+---
 
 ## License
 
