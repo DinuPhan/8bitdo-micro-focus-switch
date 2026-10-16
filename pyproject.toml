@@ -6,11 +6,16 @@ readme = "README.md"
 authors = [
     { name = "Nguyen Dinh Phan", email = "nguyenphan.uit@gmail.com" }
 ]
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "bleak>=3.0.2",
     "evdev>=2.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/DinuPhan/8bitdo-micro-focus-switch"
+Repository = "https://github.com/DinuPhan/8bitdo-micro-focus-switch"
 
 [project.scripts]
 8bitdo-micro-focus-switch = "eightbitdo_micro_focus_switch.cli:main"
