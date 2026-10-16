@@ -215,16 +215,20 @@ RestartSec=2
 WantedBy=default.target
 """
     service_path.write_text(unit_text, encoding="utf-8")
-    print(f"Wrote systemd user unit: {service_path}")
+    print("=== 8BitDo Micro systemd User Service Setup (Situational) ===")
+    print("When is this needed?")
+    print("  • Optional / Situational: Use this only if you want the focus-aware daemon to start")
+    print("    automatically in the background on desktop login.")
+    print("  • Not needed if you prefer running `8bitdo-micro-focus-switch daemon` manually in a terminal.")
+    print(f"\nWrote systemd user unit: {service_path}")
     print("\nTo enable and start the service:")
     print("  systemctl --user daemon-reload")
     print("  systemctl --user enable --now 8bitdo-micro-focus-switch.service")
 
     uinput_ok, _ = check_uinput_access()
     if not uinput_ok:
-        print("\nNOTE: For `--backend uinput` (<1ms virtual keyboard mode), grant /dev/uinput access once:")
-        print(f"  echo '{UDEV_RULE_CONTENT.strip()}' | sudo tee {UDEV_RULE_PATH}")
-        print("  sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput")
+        print("\nNOTE: For multi-button combos or instant <1ms remapping, run the udev setup:")
+        print("  8bitdo-micro-focus-switch install-udev")
     return 0
 
 
@@ -232,10 +236,15 @@ def _cmd_install_udev(args: argparse.Namespace) -> int:
     uinput_ok, msg = check_uinput_access()
     if uinput_ok:
         print("✓ /dev/uinput is already accessible and writable by your user!")
+        print("  (Your user is in group 'input' and udev permissions are active)")
         return 0
 
-    print("=== 8BitDo Micro udev Setup ===")
-    print(f"Target rule path : {UDEV_RULE_PATH}")
+    print("=== 8BitDo Micro udev Setup (Situational) ===")
+    print("When is this needed?")
+    print("  • REQUIRED only when you use multi-button combos/chords (e.g. L1+R1 -> Super+K).")
+    print("  • REQUIRED only when you use shell commands (exec: ...) or instant <1ms uinput remapping.")
+    print("  • NOT needed if you only use direct BLE hardware flashing ('ble write') for standalone use.")
+    print(f"\nTarget rule path : {UDEV_RULE_PATH}")
     print(f"Rule content     : {UDEV_RULE_CONTENT.strip()}\n")
     print("Attempting to write udev rule with sudo...")
 
@@ -608,10 +617,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # status
+    # status
     p_status = sub.add_parser(
         "status",
         parents=[common_parser],
-        help="Show Hyprland focus, input device, and profile status",
+        help="[Daily] Show Hyprland focus, connected controller, and profile status",
     )
     p_status.add_argument("--ble", action="store_true", help="Also query live hardware state over BLE GATT")
     p_status.add_argument("--address", help="Optional BLE MAC address override (e.g. E4:17:D8:D8:52:02)")
@@ -622,7 +632,7 @@ def build_parser() -> argparse.ArgumentParser:
         "discover",
         aliases=["scan"],
         parents=[common_parser],
-        help="Scan and list all connected and nearby 8BitDo Micro controllers (HID + BLE)",
+        help="[Daily] Scan and list all connected and nearby 8BitDo Micro controllers (HID + BLE)",
     )
     p_disc.add_argument("--timeout", type=float, default=4.0, help="BLE scan timeout in seconds")
 
@@ -630,7 +640,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_daemon = sub.add_parser(
         "daemon",
         parents=[common_parser],
-        help="Run the Hyprland focus-aware profile switching daemon",
+        help="[Daemon] Run the Hyprland focus-aware profile switching daemon in foreground",
     )
     p_daemon.add_argument(
         "--backend",
@@ -646,7 +656,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_daemon.add_argument("--address", help="Optional BLE MAC address override")
 
     # ble
-    p_ble = sub.add_parser("ble", help="Direct BLE GATT ('80EL') hardware profile reader and flasher")
+    p_ble = sub.add_parser(
+        "ble",
+        help="[Hardware] Direct BLE GATT ('80EL') hardware profile reader and flasher (standalone mode)",
+    )
     ble_sub = p_ble.add_subparsers(dest="ble_command", required=True)
 
     p_ble_read = ble_sub.add_parser("read", help="Read current firmware version and mapping from controller")
@@ -684,7 +697,7 @@ def build_parser() -> argparse.ArgumentParser:
         "config",
         aliases=["edit", "init-config"],
         parents=[common_parser],
-        help="Open profiles.toml in your editor, jump to a profile, or create a new profile template",
+        help="[Daily] Open profiles.toml in your editor, jump to a profile, or create new profiles",
     )
     p_config.add_argument(
         "profile",
@@ -718,7 +731,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # install-service
-    p_svc = sub.add_parser("install-service", help="Generate systemd --user service and show udev setup")
+    p_svc = sub.add_parser(
+        "install-service",
+        help="[Situational Setup] Generate systemd --user service to auto-start daemon on login (optional)",
+    )
     p_svc.add_argument(
         "--backend",
         choices=("uinput", "ble", "hybrid"),
@@ -727,14 +743,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # install-udev
-    sub.add_parser("install-udev", help="Grant input group write access to /dev/uinput via udev rule")
+    sub.add_parser(
+        "install-udev",
+        help="[Situational Setup] Install /dev/uinput udev rule (REQUIRED only for combos, exec:, or uinput mode)",
+    )
 
     # show / hud / diagram
     p_show = sub.add_parser(
         "show",
         aliases=["hud", "diagram"],
         parents=[common_parser],
-        help="Display visual button mapping diagram of focused window or specified profile",
+        help="[Daily] Display visual button mapping diagram of focused window or specified profile",
     )
     p_show.add_argument(
         "profile",

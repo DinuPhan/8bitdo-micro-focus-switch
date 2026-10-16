@@ -87,19 +87,39 @@ uv pip install -e .
 2. Hold the small **Pair** button on the bottom until the LED blinks rapidly.
 3. Pair with your Linux machine in your Bluetooth settings. It will connect as an input keyboard.
 
-### 3. Run the Daemon
+### 3. Quick Status Check
 
 ```bash
-# Check status and see connected controller + active window:
+# Verify your controller is connected and see the active profile:
 8bitdo-micro-focus-switch status
 
-# Start the background focus-switching service:
-8bitdo-micro-focus-switch install-service --backend ble
-systemctl --user daemon-reload
-systemctl --user enable --now 8bitdo-micro-focus-switch.service
+# Or preview your keymap layout visually:
+8bitdo-micro-focus-switch show
 ```
 
-That's it! As you switch between your terminal, YouTube, and Anki, your controller keys will automatically adapt.
+---
+
+## Daily Commands
+
+These are the primary commands you will use daily:
+
+```bash
+# 1. Preview your key mappings as an interactive visual HUD:
+8bitdo-micro-focus-switch show
+
+# 2. Edit or customize an app profile in your editor:
+8bitdo-micro-focus-switch config agy
+8bitdo-micro-focus-switch config youtube
+
+# 3. Add a new app profile (e.g. Spotify, Discord, VS Code):
+8bitdo-micro-focus-switch config spotify
+
+# 4. Check Hyprland focus status and connected controllers:
+8bitdo-micro-focus-switch status
+
+# 5. Scan for nearby controllers:
+8bitdo-micro-focus-switch discover
+```
 
 ---
 
@@ -197,6 +217,37 @@ If you prefer to flash a profile directly into the controller's onboard memory (
 # Reset controller back to factory keys:
 8bitdo-micro-focus-switch ble reset
 ```
+
+---
+
+## Situational & Setup Commands
+
+These commands are only needed for one-time environment setup or advanced usage:
+
+### 1. `install-udev` (One-time setup for Combos / uinput mode)
+
+```bash
+8bitdo-micro-focus-switch install-udev
+```
+
+- **When is this needed?**
+  - **REQUIRED** if you use multi-button combos/chords (e.g., `L1 + R1 -> Super + K`).
+  - **REQUIRED** if you use shell execution commands (`exec: ...`) or instant `<1ms` software focus remapping.
+- **When is this NOT needed?**
+  - If you only use direct BLE hardware flashing (`8bitdo-micro-focus-switch ble write <profile>`) to burn profiles to the controller's onboard memory, you do **not** need `install-udev`.
+
+### 2. `install-service` (Auto-start Daemon on Login)
+
+```bash
+# Generate the systemd user unit to start the remapper automatically:
+8bitdo-micro-focus-switch install-service
+systemctl --user daemon-reload
+systemctl --user enable --now 8bitdo-micro-focus-switch.service
+```
+
+- **When is this needed?**
+  - **Optional / Situational**: Use this if you want the focus-aware remapper daemon to run seamlessly in the background as a system service.
+  - If you prefer running `8bitdo-micro-focus-switch daemon` manually in a terminal, you do not need this service.
 
 ---
 

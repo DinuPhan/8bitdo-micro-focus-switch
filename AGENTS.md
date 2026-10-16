@@ -161,6 +161,12 @@ If troubleshooting connection or verifying hardware mapping:
 8bitdo-micro-focus-switch ble write <profile_name>
 ```
 
+### 3.4 Situational Setup Commands
+
+Agents should guide users to situational setup commands only when relevant:
+- **`install-udev`**: REQUIRED only when using multi-button combos/chords (`[profiles.<name>.combos]`), shell commands (`exec:`), or host-side `<1ms` software focus remapping (`uinput` mode). Not needed if only using standalone BLE hardware flashing (`ble write`).
+- **`install-service`**: Use only if the user wants the background focus-aware daemon to start automatically upon login.
+
 ---
 
 ## 4. Invariants & Safety Rules
