@@ -91,26 +91,72 @@ async def watch_windows_focus(
 # ---------------------------------------------------------------------------
 
 def query_macos_active_window() -> ActiveWindow:
-    """Query the frontmost application and window on macOS."""
-    # 1. Try PyObjC AppKit if installed
+    """Query the frontmost application and window on macOS.
+
+    Prioritizes in-process AppKit (NSWorkspace) and Quartz (CGWindowListCopyWindowInfo)
+    to eliminate subprocess spawning and minimize CPU usage.
+    """
+    # 1. Try PyObjC AppKit + Quartz (100% in-process, zero subprocess spawning)
     try:
         from AppKit import NSWorkspace  # type: ignore
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
         if app is not None:
-            name = str(app.localizedName() or "")
+            app_name = str(app.localizedName() or "")
             bundle_id = str(app.bundleIdentifier() or "")
+            pid = app.processIdentifier()
+
+            window_title = app_name
+            # Query Quartz in-process for the window title
+            try:
+                import Quartz  # type: ignore
+                windows = Quartz.CGWindowListCopyWindowInfo(
+                    Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+                    Quartz.kCGNullWindowID,
+                )
+                for w in windows:
+                    if w.get(Quartz.kCGWindowOwnerPID) == pid and w.get(Quartz.kCGWindowLayer, 0) == 0:
+                        name = w.get(Quartz.kCGWindowName)
+                        if name:
+                            window_title = str(name)
+                            break
+            except Exception:
+                pass
+
             return ActiveWindow(
-                window_class=bundle_id or name,
-                window_title=name,
-                process_name=name,
+                window_class=bundle_id or app_name,
+                window_title=window_title,
+                address=str(pid),
+                process_name=app_name,
             )
     except Exception:
         pass
 
-    # 2. Fallback to osascript (built-in on every macOS system)
+    # 2. Try Quartz directly if NSWorkspace wasn't imported
+    try:
+        import Quartz  # type: ignore
+        windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID,
+        )
+        for w in windows:
+            if w.get(Quartz.kCGWindowLayer, 0) == 0:
+                owner = str(w.get(Quartz.kCGWindowOwnerName, "") or "")
+                title = str(w.get(Quartz.kCGWindowName, "") or "")
+                pid = w.get(Quartz.kCGWindowOwnerPID, 0)
+                if owner or title:
+                    return ActiveWindow(
+                        window_class=owner.lower(),
+                        window_title=title or owner,
+                        address=str(pid),
+                        process_name=owner,
+                    )
+    except Exception:
+        pass
+
+    # 3. Fallback to osascript only when PyObjC is not installed
     try:
         import subprocess
-        script = 'tell application "System Events" to get name of first application process whose frontmost is true'
+        script = 'tell application "System Events" to get {name, title of front window} of first application process whose frontmost is true'
         res = subprocess.run(
             ["osascript", "-e", script],
             capture_output=True,
@@ -118,10 +164,12 @@ def query_macos_active_window() -> ActiveWindow:
             timeout=1.0,
         )
         if res.returncode == 0 and res.stdout.strip():
-            app_name = res.stdout.strip()
+            parts = [p.strip() for p in res.stdout.strip().split(",", 1)]
+            app_name = parts[0]
+            win_title = parts[1] if len(parts) > 1 and parts[1] else app_name
             return ActiveWindow(
                 window_class=app_name,
-                window_title=app_name,
+                window_title=win_title,
                 process_name=app_name,
             )
     except Exception:
@@ -132,7 +180,7 @@ def query_macos_active_window() -> ActiveWindow:
 
 async def watch_macos_focus(
     on_focus_change: Callable[[ActiveWindow], None] | None = None,
-    poll_interval: float = 0.2,
+    poll_interval: float = 0.15,
 ) -> AsyncIterator[ActiveWindow]:
     """Poll the active window on macOS."""
     last = query_macos_active_window()

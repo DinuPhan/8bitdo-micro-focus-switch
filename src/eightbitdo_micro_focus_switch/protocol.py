@@ -210,144 +210,34 @@ FACTORY_EVDEV_TO_BUTTON: dict[int, str] = {
 
 BUTTON_TO_FACTORY_EVDEV: dict[str, int] = {v: k for k, v in FACTORY_EVDEV_TO_BUTTON.items()}
 
-# USB HID Keyboard/Keypad Page (0x07) Usage ID <-> Canonical Key Name <-> Linux evdev keycode
-# Matches com.abitdo.advance.mode.mapping.KeyBoard
-_HID_KEY_TABLE: tuple[tuple[int, str, int, tuple[str, ...]], ...] = (
-    (0x04, "A", ecodes.KEY_A, ()),
-    (0x05, "B", ecodes.KEY_B, ()),
-    (0x06, "C", ecodes.KEY_C, ()),
-    (0x07, "D", ecodes.KEY_D, ()),
-    (0x08, "E", ecodes.KEY_E, ()),
-    (0x09, "F", ecodes.KEY_F, ()),
-    (0x0A, "G", ecodes.KEY_G, ()),
-    (0x0B, "H", ecodes.KEY_H, ()),
-    (0x0C, "I", ecodes.KEY_I, ()),
-    (0x0D, "J", ecodes.KEY_J, ()),
-    (0x0E, "K", ecodes.KEY_K, ()),
-    (0x0F, "L", ecodes.KEY_L, ()),
-    (0x10, "M", ecodes.KEY_M, ()),
-    (0x11, "N", ecodes.KEY_N, ()),
-    (0x12, "O", ecodes.KEY_O, ()),
-    (0x13, "P", ecodes.KEY_P, ()),
-    (0x14, "Q", ecodes.KEY_Q, ()),
-    (0x15, "R", ecodes.KEY_R, ()),
-    (0x16, "S", ecodes.KEY_S, ()),
-    (0x17, "T", ecodes.KEY_T, ()),
-    (0x18, "U", ecodes.KEY_U, ()),
-    (0x19, "V", ecodes.KEY_V, ()),
-    (0x1A, "W", ecodes.KEY_W, ()),
-    (0x1B, "X", ecodes.KEY_X, ()),
-    (0x1C, "Y", ecodes.KEY_Y, ()),
-    (0x1D, "Z", ecodes.KEY_Z, ()),
-    (0x1E, "1", ecodes.KEY_1, ()),
-    (0x1F, "2", ecodes.KEY_2, ()),
-    (0x20, "3", ecodes.KEY_3, ()),
-    (0x21, "4", ecodes.KEY_4, ()),
-    (0x22, "5", ecodes.KEY_5, ()),
-    (0x23, "6", ecodes.KEY_6, ()),
-    (0x24, "7", ecodes.KEY_7, ()),
-    (0x25, "8", ecodes.KEY_8, ()),
-    (0x26, "9", ecodes.KEY_9, ()),
-    (0x27, "0", ecodes.KEY_0, ()),
-    (0x28, "ENTER", ecodes.KEY_ENTER, ("RETURN",)),
-    (0x29, "ESC", ecodes.KEY_ESC, ("ESCAPE",)),
-    (0x2A, "BACKSPACE", ecodes.KEY_BACKSPACE, ("BKSP",)),
-    (0x2B, "TAB", ecodes.KEY_TAB, ()),
-    (0x2C, "SPACE", ecodes.KEY_SPACE, ("SPACEBAR",)),
-    (0x2D, "MINUS", ecodes.KEY_MINUS, ("-", "SUB")),
-    (0x2E, "EQUAL", ecodes.KEY_EQUAL, ("=", "EQUALS")),
-    (0x2F, "LEFTBRACE", ecodes.KEY_LEFTBRACE, ("[", "LBRACKET")),
-    (0x30, "RIGHTBRACE", ecodes.KEY_RIGHTBRACE, ("]", "RBRACKET")),
-    (0x31, "BACKSLASH", ecodes.KEY_BACKSLASH, ("\\",)),
-    (0x33, "SEMICOLON", ecodes.KEY_SEMICOLON, (";",)),
-    (0x34, "APOSTROPHE", ecodes.KEY_APOSTROPHE, ("'", "QUOTE")),
-    (0x35, "GRAVE", ecodes.KEY_GRAVE, ("`", "BACKTICK", "TILDE")),
-    (0x36, "COMMA", ecodes.KEY_COMMA, (",",)),
-    (0x37, "DOT", ecodes.KEY_DOT, (".", "PERIOD")),
-    (0x38, "SLASH", ecodes.KEY_SLASH, ("/", "DIV")),
-    (0x39, "CAPSLOCK", ecodes.KEY_CAPSLOCK, ("CAPS",)),
-    (0x3A, "F1", ecodes.KEY_F1, ()),
-    (0x3B, "F2", ecodes.KEY_F2, ()),
-    (0x3C, "F3", ecodes.KEY_F3, ()),
-    (0x3D, "F4", ecodes.KEY_F4, ()),
-    (0x3E, "F5", ecodes.KEY_F5, ()),
-    (0x3F, "F6", ecodes.KEY_F6, ()),
-    (0x40, "F7", ecodes.KEY_F7, ()),
-    (0x41, "F8", ecodes.KEY_F8, ()),
-    (0x42, "F9", ecodes.KEY_F9, ()),
-    (0x43, "F10", ecodes.KEY_F10, ()),
-    (0x44, "F11", ecodes.KEY_F11, ()),
-    (0x45, "F12", ecodes.KEY_F12, ()),
-    (0x46, "SYSRQ", ecodes.KEY_SYSRQ, ("PRINTSCREEN", "PRTSC")),
-    (0x47, "SCROLLLOCK", ecodes.KEY_SCROLLLOCK, ()),
-    (0x48, "PAUSE", ecodes.KEY_PAUSE, ()),
-    (0x49, "INSERT", ecodes.KEY_INSERT, ("INS",)),
-    (0x4A, "HOME", ecodes.KEY_HOME, ()),
-    (0x4B, "PAGEUP", ecodes.KEY_PAGEUP, ("PGUP",)),
-    (0x4C, "DELETE", ecodes.KEY_DELETE, ("DEL",)),
-    (0x4D, "END", ecodes.KEY_END, ()),
-    (0x4E, "PAGEDOWN", ecodes.KEY_PAGEDOWN, ("PGDN",)),
-    (0x4F, "RIGHT", ecodes.KEY_RIGHT, ("RIGHTARROW",)),
-    (0x50, "LEFT", ecodes.KEY_LEFT, ("LEFTARROW",)),
-    (0x51, "DOWN", ecodes.KEY_DOWN, ("DOWNARROW",)),
-    (0x52, "UP", ecodes.KEY_UP, ("UPARROW",)),
-    (0x53, "NUMLOCK", ecodes.KEY_NUMLOCK, ()),
-    (0x54, "KPSLASH", ecodes.KEY_KPSLASH, ("KP_DIV",)),
-    (0x55, "KPASTERISK", ecodes.KEY_KPASTERISK, ("KP_MUL", "KPMUL")),
-    (0x56, "KPMINUS", ecodes.KEY_KPMINUS, ("KP_SUB", "KPSUB")),
-    (0x57, "KPPLUS", ecodes.KEY_KPPLUS, ("KP_ADD", "KPADD")),
-    (0x58, "KPENTER", ecodes.KEY_KPENTER, ()),
-    (0x59, "KP1", ecodes.KEY_KP1, ()),
-    (0x5A, "KP2", ecodes.KEY_KP2, ()),
-    (0x5B, "KP3", ecodes.KEY_KP3, ()),
-    (0x5C, "KP4", ecodes.KEY_KP4, ()),
-    (0x5D, "KP5", ecodes.KEY_KP5, ()),
-    (0x5E, "KP6", ecodes.KEY_KP6, ()),
-    (0x5F, "KP7", ecodes.KEY_KP7, ()),
-    (0x60, "KP8", ecodes.KEY_KP8, ()),
-    (0x61, "KP9", ecodes.KEY_KP9, ()),
-    (0x62, "KP0", ecodes.KEY_KP0, ()),
-    (0x63, "KPDOT", ecodes.KEY_KPDOT, ()),
-    (0x65, "COMPOSE", ecodes.KEY_COMPOSE, ("APP", "MENU")),
-    (0x68, "F13", ecodes.KEY_F13, ()),
-    (0x69, "F14", ecodes.KEY_F14, ()),
-    (0x6A, "F15", ecodes.KEY_F15, ()),
-    (0x6B, "F16", ecodes.KEY_F16, ()),
-    (0x6C, "F17", ecodes.KEY_F17, ()),
-    (0x6D, "F18", ecodes.KEY_F18, ()),
-    (0x6E, "F19", ecodes.KEY_F19, ()),
-    (0x6F, "F20", ecodes.KEY_F20, ()),
-    (0x70, "F21", ecodes.KEY_F21, ()),
-    (0x71, "F22", ecodes.KEY_F22, ()),
-    (0x72, "F23", ecodes.KEY_F23, ()),
-    (0x73, "F24", ecodes.KEY_F24, ()),
-    (0xE0, "LEFTCTRL", ecodes.KEY_LEFTCTRL, ("LCTRL", "CTRL")),
-    (0xE1, "LEFTSHIFT", ecodes.KEY_LEFTSHIFT, ("LSHIFT", "SHIFT")),
-    (0xE2, "LEFTALT", ecodes.KEY_LEFTALT, ("LALT", "ALT")),
-    (0xE3, "LEFTMETA", ecodes.KEY_LEFTMETA, ("LWIN", "SUPER", "LMETA", "META")),
-    (0xE4, "RIGHTCTRL", ecodes.KEY_RIGHTCTRL, ("RCTRL",)),
-    (0xE5, "RIGHTSHIFT", ecodes.KEY_RIGHTSHIFT, ("RSHIFT",)),
-    (0xE6, "RIGHTALT", ecodes.KEY_RIGHTALT, ("RALT", "ALTGR")),
-    (0xE7, "RIGHTMETA", ecodes.KEY_RIGHTMETA, ("RWIN", "RMETA")),
+from .keycodes import (
+    EVDEV_TO_NAME,
+    HID_TO_EVDEV,
+    HID_TO_NAME,
+    KEY_BY_EVDEV,
+    KEY_BY_HID,
+    KEY_BY_MAC_VK,
+    KEY_BY_NAME,
+    KEY_BY_WIN_VK,
+    KEY_SPECS,
+    KeySpec,
+    NAME_TO_EVDEV,
+    NAME_TO_HID,
+    NAME_TO_MAC_VK,
+    NAME_TO_WIN_VK,
+    SENTINEL_BUTTON_MAP,
+    SENTINEL_HID_TO_BUTTON,
+    SENTINEL_MAC_VK_TO_BUTTON,
+    SENTINEL_WIN_VK_TO_BUTTON,
+    WIN_VK_TO_NAME,
+    normalize_key_name,
 )
 
-HID_TO_NAME: dict[int, str] = {0x00: "NONE"}
-HID_TO_EVDEV: dict[int, int] = {}
-NAME_TO_HID: dict[str, int] = {"NONE": 0x00, "": 0x00}
-NAME_TO_EVDEV: dict[str, int] = {}
-
-for _hid, _name, _ev, _aliases in _HID_KEY_TABLE:
-    HID_TO_NAME[_hid] = _name
-    HID_TO_EVDEV[_hid] = _ev
-    NAME_TO_HID[_name] = _hid
-    NAME_TO_HID[f"KEY_{_name}"] = _hid
-    NAME_TO_EVDEV[_name] = _ev
-    NAME_TO_EVDEV[f"KEY_{_name}"] = _ev
-    for _alias in _aliases:
-        NAME_TO_HID[_alias] = _hid
-        NAME_TO_HID[f"KEY_{_alias}"] = _hid
-        NAME_TO_EVDEV[_alias] = _ev
-        NAME_TO_EVDEV[f"KEY_{_alias}"] = _ev
+# USB HID Keyboard/Keypad Page (0x07) Usage ID <-> Canonical Key Name <-> Linux evdev keycode
+# Re-exported as a tuple of (hid, name, evdev, aliases) for complete backward compatibility
+_HID_KEY_TABLE: tuple[tuple[int, str, int, tuple[str, ...]], ...] = tuple(
+    (k.hid, k.name, k.evdev, k.aliases) for k in KEY_SPECS
+)
 
 
 def key_name_to_hid(name: str | int) -> int:
@@ -718,6 +608,20 @@ def get_builtin_hardware_preset(name: str) -> MicroHardwareProfile:
             turn=0,
             enabled=True,
         )
+    if key in ("sentinel", "host"):
+        # Zero-collision Sentinel keymap (F13..F20 + Numpad) for user-space hooks on Windows/macOS
+        slots = {}
+        for btn in PHYSICAL_BUTTONS:
+            sentinel_key = SENTINEL_BUTTON_MAP.get(btn)
+            if sentinel_key and sentinel_key in NAME_TO_HID:
+                slots[btn] = (NAME_TO_HID[sentinel_key], 0, 0, 0)
+            else:
+                slots[btn] = (0, 0, 0, 0)
+        return MicroHardwareProfile(
+            enabled=True,
+            turn=0,
+            slots=slots,
+        )
     raise ValueError(
-        f"Unknown built-in preset {name!r} (valid: 'agy', 'youtube', 'factory', 'anki', 'supermemo')"
+        f"Unknown built-in preset {name!r} (valid: 'agy', 'youtube', 'factory', 'anki', 'supermemo', 'sentinel')"
     )

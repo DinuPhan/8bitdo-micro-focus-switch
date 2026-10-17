@@ -996,6 +996,91 @@ B = "Space"
     assert "L+R" not in hw.slots
 
 
+def test_cross_platform_keyspec_and_sentinel_keymap() -> None:
+    from eightbitdo_micro_focus_switch.keycodes import (
+        KEY_BY_NAME,
+        KEY_SPECS,
+        SENTINEL_BUTTON_MAP,
+        SENTINEL_HID_TO_BUTTON,
+        SENTINEL_MAC_VK_TO_BUTTON,
+        SENTINEL_WIN_VK_TO_BUTTON,
+    )
+    from eightbitdo_micro_focus_switch.protocol import (
+        PHYSICAL_BUTTONS,
+        get_builtin_hardware_preset,
+    )
+
+    # 1. Test KeySpec integrity
+    assert len(KEY_SPECS) >= 90
+    a_spec = KEY_BY_NAME["A"]
+    assert a_spec.hid == 0x04
+    assert a_spec.evdev == 30
+    assert a_spec.win_vk == 0x41
+    assert a_spec.win_scancode == 0x1E
+    assert a_spec.mac_vk == 0x00
+    assert not a_spec.is_win_extended
+
+    # Extended key check (e.g. Delete, Right Ctrl, Arrows)
+    del_spec = KEY_BY_NAME["DELETE"]
+    assert del_spec.is_win_extended
+    assert del_spec.win_raw_scancode == 0x53
+
+    # macOS ADB quirks check: 5 is 0x17, 6 is 0x16; KP8 is 0x5B
+    assert KEY_BY_NAME["5"].mac_vk == 0x17
+    assert KEY_BY_NAME["6"].mac_vk == 0x16
+    assert KEY_BY_NAME["KP8"].mac_vk == 0x5B
+
+    # 2. Test Sentinel Button Map avoids F21..F24 trap on macOS
+    assert set(SENTINEL_BUTTON_MAP.keys()) == set(PHYSICAL_BUTTONS)
+    assert len(SENTINEL_BUTTON_MAP) == 16
+
+    # Action / Shoulder buttons: F13..F20
+    assert SENTINEL_BUTTON_MAP["A"] == "F13"
+    assert SENTINEL_BUTTON_MAP["B"] == "F14"
+    assert SENTINEL_BUTTON_MAP["X"] == "F15"
+    assert SENTINEL_BUTTON_MAP["Y"] == "F16"
+    assert SENTINEL_BUTTON_MAP["L"] == "F17"
+    assert SENTINEL_BUTTON_MAP["R"] == "F18"
+    assert SENTINEL_BUTTON_MAP["L2"] == "F19"
+    assert SENTINEL_BUTTON_MAP["R2"] == "F20"
+
+    # Center & Special: Math Numpad symbols
+    assert SENTINEL_BUTTON_MAP["SELECT"] == "KPSLASH"
+    assert SENTINEL_BUTTON_MAP["START"] == "KPASTERISK"
+    assert SENTINEL_BUTTON_MAP["STAR"] == "KPMINUS"
+    assert SENTINEL_BUTTON_MAP["HOME"] == "KPPLUS"
+
+    # D-pad: Numpad digits
+    assert SENTINEL_BUTTON_MAP["UP"] == "KP8"
+    assert SENTINEL_BUTTON_MAP["DOWN"] == "KP2"
+    assert SENTINEL_BUTTON_MAP["LEFT"] == "KP4"
+    assert SENTINEL_BUTTON_MAP["RIGHT"] == "KP6"
+
+    # Verify that all 16 sentinel keys have valid mac_vk (not None) and distinct win_vk
+    seen_mac_vk = set()
+    seen_win_vk = set()
+    for btn, key_name in SENTINEL_BUTTON_MAP.items():
+        spec = KEY_BY_NAME[key_name]
+        assert spec.mac_vk is not None, f"Sentinel key {key_name} for button {btn} has no macOS CGKeyCode!"
+        assert spec.mac_vk not in seen_mac_vk, f"Duplicate macOS CGKeyCode for {key_name}"
+        assert spec.win_vk not in seen_win_vk, f"Duplicate Windows VK for {key_name}"
+        seen_mac_vk.add(spec.mac_vk)
+        seen_win_vk.add(spec.win_vk)
+
+    assert len(SENTINEL_HID_TO_BUTTON) == 16
+    assert len(SENTINEL_WIN_VK_TO_BUTTON) == 16
+    assert len(SENTINEL_MAC_VK_TO_BUTTON) == 16
+
+    # 3. Test built-in 'sentinel' hardware preset
+    sentinel_hw = get_builtin_hardware_preset("sentinel")
+    assert sentinel_hw.enabled is True
+    assert sentinel_hw.slots["A"] == (0x68, 0, 0, 0)
+    assert sentinel_hw.slots["SELECT"] == (0x54, 0, 0, 0)
+    assert sentinel_hw.slots["UP"] == (0x60, 0, 0, 0)
+    raw = sentinel_hw.to_bytes()
+    assert len(raw) == 180
+
+
 
 
 
