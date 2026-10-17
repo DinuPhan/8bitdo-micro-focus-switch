@@ -228,6 +228,7 @@ from .keycodes import (
     SENTINEL_BUTTON_MAP,
     SENTINEL_HID_TO_BUTTON,
     SENTINEL_MAC_VK_TO_BUTTON,
+    SENTINEL_WIN_SCAN_TO_BUTTON,
     SENTINEL_WIN_VK_TO_BUTTON,
     WIN_VK_TO_NAME,
     normalize_key_name,

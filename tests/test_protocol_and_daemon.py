@@ -939,30 +939,8 @@ match_class = "test"
     assert len(daemon._held_chords) == 0  # Only combo is active!
     ui.events.clear()
 
-    # Disconnect cleanup logic simulation
-    needs_syn = False
-    for p in daemon._pending_buttons.values():
-        if p.timer_handle is not None:
-            p.timer_handle.cancel()
-    daemon._pending_buttons.clear()
-
-    for combo_act in daemon._active_combos.values():
-        if combo_act.evdev_codes:
-            for code in reversed(combo_act.evdev_codes):
-                ui.write(ecodes.EV_KEY, code, 0)
-            needs_syn = True
-    daemon._active_combos.clear()
-    daemon._held_combos.clear()
-    daemon._physical_held_buttons.clear()
-
-    for held in daemon._held_chords.values():
-        for code in reversed(held):
-            ui.write(ecodes.EV_KEY, code, 0)
-        needs_syn = True
-    daemon._held_chords.clear()
-
-    if needs_syn:
-        ui.syn()
+    # Invoke disconnect cleanup
+    daemon._cleanup_held_keys_on_disconnect(ui)
 
     assert ui.events == [
         (ecodes.EV_KEY, ecodes.KEY_F11, 0),
@@ -1079,6 +1057,365 @@ def test_cross_platform_keyspec_and_sentinel_keymap() -> None:
     assert sentinel_hw.slots["UP"] == (0x60, 0, 0, 0)
     raw = sentinel_hw.to_bytes()
     assert len(raw) == 180
+
+
+def test_windows_virtual_keyboard_and_extra_info() -> None:
+    from eightbitdo_micro_focus_switch.input_backend import (
+        KEYEVENTF_EXTENDEDKEY,
+        KEYEVENTF_KEYUP,
+        MAGIC_EXTRA_INFO,
+        WindowsVirtualKeyboard,
+    )
+
+    wvk = WindowsVirtualKeyboard()
+    # Write KEY_LEFTCTRL (code 29) down (1), then up (0)
+    wvk.write(1, ecodes.KEY_LEFTCTRL, 1)
+    wvk.write(1, ecodes.KEY_LEFTCTRL, 0)
+    # Write extended key KEY_RIGHTCTRL (code 97) down (1)
+    wvk.write(1, ecodes.KEY_RIGHTCTRL, 1)
+
+    inputs = wvk.build_win32_inputs(wvk._pending)
+    assert len(inputs) == 3
+
+    # 1. Left Ctrl Down
+    assert inputs[0]["wVk"] == 0xA2  # VK_LCONTROL
+    assert inputs[0]["dwFlags"] == 0
+    assert inputs[0]["dwExtraInfo"] == MAGIC_EXTRA_INFO
+
+    # 2. Left Ctrl Up
+    assert inputs[1]["wVk"] == 0xA2
+    assert inputs[1]["dwFlags"] == KEYEVENTF_KEYUP
+    assert inputs[1]["dwExtraInfo"] == MAGIC_EXTRA_INFO
+
+    # 3. Right Ctrl Down (Extended Key)
+    assert inputs[2]["wVk"] == 0xA3  # VK_RCONTROL
+    assert inputs[2]["dwFlags"] == KEYEVENTF_EXTENDEDKEY
+    assert inputs[2]["dwExtraInfo"] == MAGIC_EXTRA_INFO
+
+    # Test syn() flushes pending and appends to sent_history
+    wvk.syn()
+    assert len(wvk._pending) == 0
+    assert wvk.sent_history == [
+        (ecodes.KEY_LEFTCTRL, 1),
+        (ecodes.KEY_LEFTCTRL, 0),
+        (ecodes.KEY_RIGHTCTRL, 1),
+    ]
+
+    wvk.close()
+    assert wvk._closed is True
+
+
+def test_macos_virtual_keyboard_modifier_tracking() -> None:
+    from eightbitdo_micro_focus_switch.input_backend import (
+        MacOSVirtualKeyboard,
+        kCGEventFlagMaskControl,
+        kCGEventFlagMaskShift,
+    )
+
+    mvk = MacOSVirtualKeyboard()
+    # 1. Press Shift -> _active_modifiers has kCGEventFlagMaskShift
+    mvk.write(1, ecodes.KEY_LEFTSHIFT, 1)
+    assert mvk._active_modifiers & kCGEventFlagMaskShift
+
+    # 2. Press Ctrl -> both Shift and Control bits active
+    mvk.write(1, ecodes.KEY_LEFTCTRL, 1)
+    assert mvk._active_modifiers & kCGEventFlagMaskShift
+    assert mvk._active_modifiers & kCGEventFlagMaskControl
+
+    # 3. Release Shift -> only Control bit active
+    mvk.write(1, ecodes.KEY_LEFTSHIFT, 0)
+    assert not (mvk._active_modifiers & kCGEventFlagMaskShift)
+    assert mvk._active_modifiers & kCGEventFlagMaskControl
+
+    # 4. Release Ctrl -> 0 active modifiers
+    mvk.write(1, ecodes.KEY_LEFTCTRL, 0)
+    assert mvk._active_modifiers == 0
+
+    # Test syn() flushes pending and appends to sent_history
+    mvk.syn()
+    assert len(mvk._pending) == 0
+    assert len(mvk.sent_history) == 4
+
+    mvk.close()
+    assert mvk._closed is True
+
+
+def test_windows_input_backend_hook_dispatch_and_numlock_safety() -> None:
+    from eightbitdo_micro_focus_switch.input_backend import (
+        LLKHF_EXTENDED,
+        LLKHF_INJECTED,
+        MAGIC_EXTRA_INFO,
+        WM_KEYDOWN,
+        WM_KEYUP,
+        WindowsInputBackend,
+    )
+    from eightbitdo_micro_focus_switch.keycodes import KEY_BY_NAME, SENTINEL_BUTTON_MAP
+    from eightbitdo_micro_focus_switch.protocol import BUTTON_TO_FACTORY_EVDEV
+
+    dispatched: list[tuple[int, int]] = []
+
+    def on_key_event(code: int, val: int) -> None:
+        dispatched.append((code, val))
+
+    backend = WindowsInputBackend(on_key_event, loop=None)  # type: ignore[arg-type]
+
+    # 1. Skip self-injected keys (dwExtraInfo == MAGIC_EXTRA_INFO)
+    swallowed = backend.process_hook_event(
+        vk_code=0x7C,
+        scan_code=0x68,
+        flags=0,
+        dw_extra_info=MAGIC_EXTRA_INFO,
+        w_param=WM_KEYDOWN,
+    )
+    assert swallowed is False
+    assert len(dispatched) == 0
+
+    # 2. Skip injected keys (LLKHF_INJECTED flag)
+    swallowed = backend.process_hook_event(
+        vk_code=0x7C,
+        scan_code=0x68,
+        flags=LLKHF_INJECTED,
+        dw_extra_info=0,
+        w_param=WM_KEYDOWN,
+    )
+    assert swallowed is False
+    assert len(dispatched) == 0
+
+    # 3. NumLock Disambiguation Trap Verification:
+    # Physical Up Arrow on keyboard: scanCode=0x48, LLKHF_EXTENDED=True -> must NOT be swallowed!
+    swallowed = backend.process_hook_event(
+        vk_code=0x26,  # VK_UP
+        scan_code=0x48,
+        flags=LLKHF_EXTENDED,
+        dw_extra_info=0,
+        w_param=WM_KEYDOWN,
+    )
+    assert swallowed is False
+    assert len(dispatched) == 0
+
+    # 4. 8BitDo Sentinel KP8 (mapped to 'UP'): scanCode=0x48, LLKHF_EXTENDED=False -> MUST be swallowed!
+    up_factory_evdev = BUTTON_TO_FACTORY_EVDEV["UP"]
+    swallowed = backend.process_hook_event(
+        vk_code=0x68,  # VK_NUMPAD8
+        scan_code=0x48,
+        flags=0,  # is_extended = False
+        dw_extra_info=0,
+        w_param=WM_KEYDOWN,
+    )
+    assert swallowed is True
+    assert dispatched == [(up_factory_evdev, 1)]
+
+    # Repeat
+    swallowed = backend.process_hook_event(
+        vk_code=0x68,
+        scan_code=0x48,
+        flags=0,
+        dw_extra_info=0,
+        w_param=WM_KEYDOWN,
+    )
+    assert swallowed is True
+    assert dispatched[-1] == (up_factory_evdev, 2)
+
+    # Release (WM_KEYUP)
+    swallowed = backend.process_hook_event(
+        vk_code=0x68,
+        scan_code=0x48,
+        flags=0,
+        dw_extra_info=0,
+        w_param=WM_KEYUP,
+    )
+    assert swallowed is True
+    assert dispatched[-1] == (up_factory_evdev, 0)
+    assert len(backend._held_buttons) == 0
+
+
+def test_macos_input_backend_tap_dispatch_and_timeout_recovery() -> None:
+    from eightbitdo_micro_focus_switch.input_backend import (
+        MAGIC_EXTRA_INFO,
+        MacOSInputBackend,
+        kCGEventKeyDown,
+        kCGEventKeyUp,
+        kCGEventTapDisabledByTimeout,
+    )
+    from eightbitdo_micro_focus_switch.keycodes import KEY_BY_NAME, SENTINEL_BUTTON_MAP
+    from eightbitdo_micro_focus_switch.protocol import BUTTON_TO_FACTORY_EVDEV
+
+    dispatched: list[tuple[int, int]] = []
+
+    def on_key_event(code: int, val: int) -> None:
+        dispatched.append((code, val))
+
+    backend = MacOSInputBackend(on_key_event, loop=None)  # type: ignore[arg-type]
+
+    # 1. Skip self-injected keys (user_data == MAGIC_EXTRA_INFO)
+    f13_mac_vk = KEY_BY_NAME[SENTINEL_BUTTON_MAP["A"]].mac_vk
+    assert f13_mac_vk is not None
+
+    swallowed = backend.process_tap_event(
+        event_type=kCGEventKeyDown,
+        mac_vk=f13_mac_vk,
+        user_data=MAGIC_EXTRA_INFO,
+    )
+    assert swallowed is False
+    assert len(dispatched) == 0
+
+    # 2. Normal key press (not in SENTINEL_MAC_VK_TO_BUTTON)
+    swallowed = backend.process_tap_event(
+        event_type=kCGEventKeyDown,
+        mac_vk=0x00,  # 'A' on macOS keyboard, not a sentinel key
+        user_data=0,
+    )
+    assert swallowed is False
+    assert len(dispatched) == 0
+
+    # 3. Sentinel Key Press ('A' physical button sends F13 -> 0x69)
+    a_factory_evdev = BUTTON_TO_FACTORY_EVDEV["A"]
+    swallowed = backend.process_tap_event(
+        event_type=kCGEventKeyDown,
+        mac_vk=f13_mac_vk,
+        user_data=0,
+    )
+    assert swallowed is True
+    assert dispatched == [(a_factory_evdev, 1)]
+
+    # Repeat
+    swallowed = backend.process_tap_event(
+        event_type=kCGEventKeyDown,
+        mac_vk=f13_mac_vk,
+        user_data=0,
+        is_repeat=True,
+    )
+    assert swallowed is True
+    assert dispatched[-1] == (a_factory_evdev, 2)
+
+    # KeyUp
+    swallowed = backend.process_tap_event(
+        event_type=kCGEventKeyUp,
+        mac_vk=f13_mac_vk,
+        user_data=0,
+    )
+    assert swallowed is True
+    assert dispatched[-1] == (a_factory_evdev, 0)
+    assert len(backend._held_buttons) == 0
+
+    # 4. Timeout Auto-Recovery
+    swallowed = backend.process_tap_event(
+        event_type=kCGEventTapDisabledByTimeout,
+        mac_vk=0,
+        user_data=0,
+    )
+    assert swallowed is False
+
+
+def test_cross_platform_sentinel_to_daemon_pipeline(tmp_path: Path) -> None:
+    from eightbitdo_micro_focus_switch.input_backend import (
+        MockVirtualKeyboard,
+        WindowsInputBackend,
+        WM_KEYDOWN,
+        WM_KEYUP,
+    )
+    from eightbitdo_micro_focus_switch.keycodes import KEY_BY_NAME, SENTINEL_BUTTON_MAP
+
+    toml_doc = """
+[profiles.test]
+match_class = "test"
+
+[profiles.test.buttons]
+A = ["LEFTCTRL", "T"]
+"""
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    daemon = FocusSwitchDaemon(cfg, backend="host")
+    assert daemon.backend == "host"
+    daemon._on_focus_change(ActiveWindow(window_class="test", window_title="Test"))
+
+    mock_ui = MockVirtualKeyboard()
+
+    def on_key_event(factory_evdev: int, val: int) -> None:
+        daemon.handle_key_event(mock_ui, factory_evdev, val)
+
+    backend = WindowsInputBackend(on_key_event, loop=None)  # type: ignore[arg-type]
+
+    # Button A Sentinel key is F13
+    f13_spec = KEY_BY_NAME[SENTINEL_BUTTON_MAP["A"]]
+
+    # 1. Simulate Sentinel key down
+    backend.process_hook_event(
+        vk_code=f13_spec.win_vk,
+        scan_code=f13_spec.win_raw_scancode,
+        flags=0,
+        dw_extra_info=0,
+        w_param=WM_KEYDOWN,
+    )
+
+    # State machine should emit LEFTCTRL + T down
+    assert mock_ui.events == [
+        (ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1),
+        (ecodes.EV_KEY, ecodes.KEY_T, 1),
+    ]
+    assert mock_ui.syn_count == 1
+    mock_ui.events.clear()
+
+    # 2. Simulate Sentinel key up
+    backend.process_hook_event(
+        vk_code=f13_spec.win_vk,
+        scan_code=f13_spec.win_raw_scancode,
+        flags=0,
+        dw_extra_info=0,
+        w_param=WM_KEYUP,
+    )
+
+    # State machine should release T then LEFTCTRL up
+    assert mock_ui.events == [
+        (ecodes.EV_KEY, ecodes.KEY_T, 0),
+        (ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0),
+    ]
+    assert mock_ui.syn_count == 2
+
+
+def test_create_virtual_keyboard_and_platform_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from eightbitdo_micro_focus_switch.input_backend import (
+        LinuxVirtualKeyboard,
+        MacOSVirtualKeyboard,
+        WindowsVirtualKeyboard,
+        check_platform_input_access,
+        create_virtual_keyboard,
+    )
+
+    # 1. Platform checks
+    ok, msg = check_platform_input_access()
+    assert isinstance(ok, bool)
+    assert isinstance(msg, str)
+
+    # 2. Virtual keyboard factory
+    monkeypatch.setattr("sys.platform", "win32")
+    win_vk = create_virtual_keyboard()
+    assert isinstance(win_vk, WindowsVirtualKeyboard)
+
+    monkeypatch.setattr("sys.platform", "darwin")
+    mac_vk = create_virtual_keyboard()
+    assert isinstance(mac_vk, MacOSVirtualKeyboard)
+
+    monkeypatch.setattr("sys.platform", "linux")
+    fake_dev = object()
+    linux_vk = create_virtual_keyboard(uinput_dev=fake_dev)
+    assert isinstance(linux_vk, LinuxVirtualKeyboard)
+
+    with pytest.raises(ValueError, match="pass the initialized UInput device"):
+        create_virtual_keyboard()
+
+    # 3. Daemon backend normalization on non-Linux
+    monkeypatch.setattr("sys.platform", "win32")
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(DEFAULT_TOML_CONTENT, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    daemon = FocusSwitchDaemon(cfg, backend="uinput")
+    assert daemon.backend == "host"
+
+
 
 
 

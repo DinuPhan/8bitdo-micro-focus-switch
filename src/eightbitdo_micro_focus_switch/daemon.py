@@ -32,6 +32,14 @@ from .protocol import (
     rotate_dpad_button,
 )
 
+from .input_backend import (
+    MacOSInputBackend,
+    VirtualKeyboard,
+    WindowsInputBackend,
+    check_platform_input_access,
+    create_virtual_keyboard,
+)
+
 from dataclasses import dataclass
 
 VIRTUAL_DEVICE_NAME = "8BitDo Micro Focus-Switch Virtual Keyboard"
@@ -77,7 +85,7 @@ def check_uinput_access() -> tuple[bool, str]:
         return (
             False,
             f"The 'uinput' backend requires Linux with evdev and /dev/uinput support. "
-            f"On {sys.platform}, please use backend='ble' for direct BLE hardware remapping.",
+            f"On {sys.platform}, please use backend='host' or 'ble'.",
         )
     uinput_path = Path("/dev/uinput")
     if not uinput_path.exists():
@@ -104,7 +112,11 @@ class FocusSwitchDaemon:
     ) -> None:
         self.config = config
         self.config_path = config_path
-        self.backend = (backend or config.backend or "uinput").lower()
+        default_backend = "uinput" if sys.platform == "linux" else "host"
+        self.backend = (backend or config.backend or default_backend).lower()
+        if self.backend == "uinput" and sys.platform != "linux":
+            logger.info("Backend 'uinput' mapped to 'host' on %s", sys.platform)
+            self.backend = "host"
         self.ble_address = ble_address
         self.active_window = ActiveWindow(window_class="", window_title="")
         self.active_profile: ProfileConfig = config.resolve_profile_for_window("", "")
@@ -225,7 +237,7 @@ class FocusSwitchDaemon:
         except Exception as exc:
             logger.warning("exec command %r failed: %s", cmd, exc)
 
-    def _emit_solo_down(self, ui: UInput, keycode: int, action: ButtonAction) -> None:
+    def _emit_solo_down(self, ui: VirtualKeyboard | Any, keycode: int, action: ButtonAction) -> None:
         if action.exec_cmd:
             self._create_background_task(self._spawn_exec(action.exec_cmd))
         if action.evdev_codes:
@@ -234,14 +246,14 @@ class FocusSwitchDaemon:
                 ui.write(ecodes.EV_KEY, code, 1)
             ui.syn()
 
-    def _flush_pending_button(self, ui: UInput, keycode: int) -> None:
+    def _flush_pending_button(self, ui: VirtualKeyboard | Any, keycode: int) -> None:
         pending = self._pending_buttons.pop(keycode, None)
         if pending is None:
             return
         if pending.action is not None:
             self._emit_solo_down(ui, pending.keycode, pending.action)
 
-    def handle_key_event(self, ui: UInput, keycode: int, value: int) -> None:
+    def handle_key_event(self, ui: VirtualKeyboard | Any, keycode: int, value: int) -> None:
         """Process a single EV_KEY event (value: 0=up, 1=down, 2=hold) and emit to UInput."""
         # 1. RELEASE (value == 0)
         if value == 0:
@@ -404,9 +416,40 @@ class FocusSwitchDaemon:
             if single_act is not None:
                 self._emit_solo_down(ui, keycode, single_act)
 
+    def _cleanup_held_keys_on_disconnect(self, ui: Any) -> None:
+        """Release any held keys and combos on disconnect so nothing sticks."""
+        needs_syn = False
+
+        # Cancel any pending combo timers
+        for p in self._pending_buttons.values():
+            if p.timer_handle is not None:
+                p.timer_handle.cancel()
+        self._pending_buttons.clear()
+
+        # Release any active combos
+        for combo_act in self._active_combos.values():
+            if combo_act.evdev_codes:
+                for code in reversed(combo_act.evdev_codes):
+                    ui.write(ecodes.EV_KEY, code, 0)
+                needs_syn = True
+        self._active_combos.clear()
+        self._held_combos.clear()
+        self._physical_held_buttons.clear()
+
+        # Release any held keys on disconnect so nothing sticks
+        for held in self._held_chords.values():
+            for code in reversed(held):
+                ui.write(ecodes.EV_KEY, code, 0)
+            needs_syn = True
+        self._held_chords.clear()
+
+        if needs_syn:
+            ui.syn()
+
     async def _evdev_loop(self) -> None:
-        """Continuously attach to the 8BitDo Micro input device, grab it, and remap events."""
-        ui = self._create_uinput()
+        """Continuously attach to the 8BitDo Micro input device, grab it, and remap events on Linux."""
+        uinput_dev = self._create_uinput()
+        ui = create_virtual_keyboard(uinput_dev)
         logger.info("Created virtual keyboard: %s", VIRTUAL_DEVICE_NAME)
         try:
             while True:
@@ -435,33 +478,7 @@ class FocusSwitchDaemon:
                 except OSError as exc:
                     logger.info("8BitDo Micro disconnected (%s); releasing held keys.", exc)
                 finally:
-                    needs_syn = False
-
-                    # Cancel any pending combo timers
-                    for p in self._pending_buttons.values():
-                        if p.timer_handle is not None:
-                            p.timer_handle.cancel()
-                    self._pending_buttons.clear()
-
-                    # Release any active combos
-                    for combo_act in self._active_combos.values():
-                        if combo_act.evdev_codes:
-                            for code in reversed(combo_act.evdev_codes):
-                                ui.write(ecodes.EV_KEY, code, 0)
-                            needs_syn = True
-                    self._active_combos.clear()
-                    self._held_combos.clear()
-                    self._physical_held_buttons.clear()
-
-                    # Release any held keys on disconnect so nothing sticks
-                    for held in self._held_chords.values():
-                        for code in reversed(held):
-                            ui.write(ecodes.EV_KEY, code, 0)
-                        needs_syn = True
-                    self._held_chords.clear()
-
-                    if needs_syn:
-                        ui.syn()
+                    self._cleanup_held_keys_on_disconnect(ui)
                     try:
                         dev.ungrab()
                     except Exception:
@@ -470,6 +487,51 @@ class FocusSwitchDaemon:
                 await asyncio.sleep(1.0)
         finally:
             ui.close()
+
+    async def _host_input_loop(self) -> None:
+        """Continuously intercept and remap controller inputs on the host OS."""
+        if sys.platform == "linux":
+            await self._evdev_loop()
+            return
+
+        ui = create_virtual_keyboard()
+        loop = asyncio.get_running_loop()
+
+        def on_key_event(factory_evdev: int, value: int) -> None:
+            self.handle_key_event(ui, factory_evdev, value)
+
+        backend: Any
+        if sys.platform == "win32":
+            backend = WindowsInputBackend(on_key_event, loop)
+        elif sys.platform == "darwin":
+            backend = MacOSInputBackend(on_key_event, loop)
+        else:
+            raise NotImplementedError(f"Host input backend not supported on {sys.platform}")
+
+        backend.start()
+        logger.info("Started %s host input backend", sys.platform)
+        try:
+            while not backend.stopped:
+                await asyncio.sleep(0.5)
+        finally:
+            backend.stop()
+            self._cleanup_held_keys_on_disconnect(ui)
+            ui.close()
+
+    async def _sentinel_init(self) -> None:
+        """On Windows/macOS, flash the sentinel profile over BLE GATT to controller RAM."""
+        try:
+            logger.info("Initializing 8BitDo Micro sentinel hardware profile over BLE...")
+            dev = await find_micro_ble_device(address=self.ble_address, timeout=4.0)
+            async with MicroBleSession(dev) as session:
+                base_record = await session.read_config_bytes()
+                from .protocol import get_builtin_hardware_preset
+                sentinel_hw = get_builtin_hardware_preset("sentinel")
+                payload = sentinel_hw.to_bytes(base=base_record)
+                await session.write_config_bytes(payload, save=False)
+                logger.info("8BitDo Micro configured with sentinel keys in RAM.")
+        except Exception as exc:
+            logger.warning("BLE sentinel initialization failed (%s); continuing with existing controller profile.", exc)
 
     async def _ble_loop(self) -> None:
         """Keep BLE GATT synced to the active profile whenever Hyprland focus changes."""
@@ -508,7 +570,7 @@ class FocusSwitchDaemon:
                 logger.warning("BLE GATT auto-flash for profile %r failed: %s", target_profile.name, exc)
 
     async def run(self) -> None:
-        """Run the Hyprland focus watcher and the selected remapping backend concurrently."""
+        """Run the focus watcher and the selected remapping backend concurrently."""
         loop = asyncio.get_running_loop()
         try:
             loop.add_signal_handler(signal.SIGHUP, self.reload_config)
@@ -523,16 +585,19 @@ class FocusSwitchDaemon:
 
         tasks.append(asyncio.create_task(_focus_task()))
 
-        if self.backend in ("uinput", "hybrid"):
-            ok, msg = check_uinput_access()
+        if self.backend in ("uinput", "host", "hybrid"):
+            ok, msg = check_platform_input_access()
             if not ok:
                 raise PermissionError(msg)
-            tasks.append(asyncio.create_task(self._evdev_loop()))
+            tasks.append(asyncio.create_task(self._host_input_loop()))
+
+            if sys.platform in ("win32", "darwin"):
+                tasks.append(asyncio.create_task(self._sentinel_init()))
 
         if self.backend == "ble":
             self._ble_trigger.set()
             tasks.append(asyncio.create_task(self._ble_loop()))
-        elif self.backend == "hybrid":
+        elif self.backend == "hybrid" and sys.platform == "linux":
             # In hybrid mode: ensure factory keys on hardware via BLE once at startup,
             # then let uinput handle dynamic remapping with 0ms latency without double-remapping.
             async def _hybrid_init() -> None:

@@ -292,6 +292,11 @@ SENTINEL_WIN_VK_TO_BUTTON: dict[int, str] = {
     NAME_TO_WIN_VK[key_name]: btn for btn, key_name in SENTINEL_BUTTON_MAP.items()
 }
 
+SENTINEL_WIN_SCAN_TO_BUTTON: dict[tuple[int, bool], str] = {
+    (KEY_BY_NAME[key_name].win_raw_scancode, KEY_BY_NAME[key_name].is_win_extended): btn
+    for btn, key_name in SENTINEL_BUTTON_MAP.items()
+}
+
 SENTINEL_MAC_VK_TO_BUTTON: dict[int, str] = {
     NAME_TO_MAC_VK[key_name]: btn for btn, key_name in SENTINEL_BUTTON_MAP.items()
 }

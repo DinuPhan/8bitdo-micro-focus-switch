@@ -972,9 +972,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_daemon.add_argument(
         "--backend",
-        choices=("uinput", "ble", "hybrid"),
+        choices=("uinput", "host", "ble", "hybrid"),
         default=None,
-        help="Remapping backend: 'uinput' (<1ms evdev grab + virtual keyboard) or 'ble' (GATT reflash)",
+        help="Remapping backend: 'host'/'uinput' (<1ms user-space/evdev grab + virtual keyboard), 'ble' (GATT reflash), or 'hybrid'",
     )
     p_daemon.add_argument(
         "--ensure-factory-ble",
@@ -1101,7 +1101,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_svc.add_argument(
         "--backend",
-        choices=("uinput", "ble", "hybrid"),
+        choices=("uinput", "host", "ble", "hybrid"),
         default=None,
         help="Backend flag to bake into the systemd service",
     )
