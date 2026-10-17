@@ -243,6 +243,22 @@ The 16 physical buttons are named:
 
 If you like holding the controller vertically in one hand (e.g. for reading or flashcards), set `turn = 90` in your profile. The D-pad automatically rotates so physical "Up" continues pointing in the direction you expect!
 
+### Matching Web Apps & PWAs (e.g. YouTube, Notion, Spotify)
+
+When running apps installed via Chrome, Chromium, or Brave (Progressive Web Apps), browsers set window classes like `chrome-youtube.com__-Profile_3`.
+
+You can match either using `match_rules` (for multiple OR conditions) or regexes:
+
+```toml
+[profiles.youtube]
+description = "YouTube Video Playback in Browser or Standalone Web App"
+# Match standalone PWA (any title) OR normal browser tab with YouTube in title:
+match_rules = [
+    { class = ".*youtube.*|freetube" },
+    { class = "^(firefox|brave-browser|chromium|google-chrome|zen|vivaldi-stable)$", title = ".*(YouTube|- YouTube).*" },
+]
+```
+
 ### Multi-Button Combos & Chording (e.g. L1 + R1 -> Super + K)
 
 You can map simultaneous button presses (chords) into hotkeys or shell commands! When defined, pressing both buttons within ~40ms suppresses the individual button actions and fires your combo hotkey instead:

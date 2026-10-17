@@ -104,6 +104,31 @@ def parse_combo_buttons(key: str | list[str] | tuple[str, ...] | frozenset[str])
 
 
 @dataclass
+class MatchRule:
+    """A single window matching rule checking class and/or title regexes."""
+
+    match_class: str | None = None
+    match_title: str | None = None
+    _class_re: re.Pattern[str] | None = field(default=None, init=False, repr=False)
+    _title_re: re.Pattern[str] | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.match_class:
+            self._class_re = re.compile(self.match_class, re.IGNORECASE)
+        if self.match_title:
+            self._title_re = re.compile(self.match_title, re.IGNORECASE)
+
+    def matches(self, window_class: str, window_title: str) -> bool:
+        if self._class_re is None and self._title_re is None:
+            return False
+        if self._class_re is not None and not self._class_re.search(window_class or ""):
+            return False
+        if self._title_re is not None and not self._title_re.search(window_title or ""):
+            return False
+        return True
+
+
+@dataclass
 class ProfileConfig:
     """A named mapping profile that can be activated by window focus or flashed via BLE."""
 
@@ -111,6 +136,7 @@ class ProfileConfig:
     description: str = ""
     match_class: str | None = None
     match_title: str | None = None
+    match_rules: list[MatchRule] = field(default_factory=list)
     turn: int = 0  # degrees: 0, 90, 180, 270
     combo_timeout_ms: int = 50  # Window in ms to detect simultaneous combo presses before flushing solo key
     buttons: dict[str, ButtonAction] = field(default_factory=dict)
@@ -132,6 +158,12 @@ class ProfileConfig:
 
     def matches_window(self, window_class: str, window_title: str) -> bool:
         """Return True if this profile's match rules match the focused window."""
+        if self.match_rules:
+            for rule in self.match_rules:
+                if rule.matches(window_class, window_title):
+                    return True
+            if self._class_re is None and self._title_re is None:
+                return False
         if self._class_re is None and self._title_re is None:
             return False
         if self._class_re is not None and not self._class_re.search(window_class or ""):
@@ -299,8 +331,12 @@ LEFT = ["LEFTCTRL", "Z"]         # Undo
 RIGHT = "KPMINUS"                # Bury card
 
 [profiles.youtube]
-description = "YouTube Video Playback in Browser (native player shortcuts)"
-match_class = '^(firefox|brave-browser|chromium|google-chrome|zen|vivaldi-stable)$'
+description = "YouTube Video Playback in Browser or Standalone Web App"
+match_rules = [
+    { class = ".*youtube.*|freetube" },
+    { class = "^(firefox|brave-browser|chromium|google-chrome|zen|vivaldi-stable|microsoft-edge)$", title = ".*(YouTube|- YouTube).*" },
+]
+match_class = '^(firefox|brave-browser|chromium|google-chrome|zen|vivaldi-stable|microsoft-edge)$|.*youtube.*|freetube'
 match_title = ".*(YouTube|- YouTube).*"
 turn = 0
 
@@ -500,7 +536,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         raw_buttons = dict(prof_data.get("buttons", {}))
         raw_combos = dict(prof_data.get("combos", {}))
         for k, v in prof_data.items():
-            if k in ("buttons", "combos", "description", "match_class", "match_title", "turn", "combo_timeout_ms"):
+            if k in ("buttons", "combos", "description", "match_class", "match_title", "match_rules", "turn", "combo_timeout_ms"):
                 continue
             if "+" in k:
                 try:
@@ -528,11 +564,21 @@ def load_config(path: Path | None = None) -> AppConfig:
 
         combo_timeout_ms = int(prof_data.get("combo_timeout_ms", general.get("combo_timeout_ms", 50)))
 
+        raw_rules = prof_data.get("match_rules", [])
+        match_rules: list[MatchRule] = []
+        if isinstance(raw_rules, list):
+            for r in raw_rules:
+                if isinstance(r, dict):
+                    c_pat = r.get("class", r.get("match_class"))
+                    t_pat = r.get("title", r.get("match_title"))
+                    match_rules.append(MatchRule(match_class=c_pat, match_title=t_pat))
+
         profiles[prof_name] = ProfileConfig(
             name=prof_name,
             description=str(prof_data.get("description", "")),
             match_class=prof_data.get("match_class"),
             match_title=prof_data.get("match_title"),
+            match_rules=match_rules,
             turn=int(prof_data.get("turn", 0)),
             combo_timeout_ms=combo_timeout_ms,
             buttons=buttons,

@@ -72,11 +72,22 @@ def _format_profile_table(config_path: Path) -> str:
                 lines.append(f"      Combos: {', '.join(combo_parts)}")
             continue
         match_parts: list[str] = []
-        if prof.match_class:
-            match_parts.append(f"class~={prof.match_class!r}")
-        if prof.match_title:
-            match_parts.append(f"title~={prof.match_title!r}")
-        match_str = ", ".join(match_parts) if match_parts else "(manual / fallback)"
+        if prof.match_rules:
+            for r in prof.match_rules:
+                r_parts = []
+                if r.match_class:
+                    r_parts.append(f"class~={r.match_class!r}")
+                if r.match_title:
+                    r_parts.append(f"title~={r.match_title!r}")
+                if r_parts:
+                    match_parts.append(f"({' && '.join(r_parts)})")
+            match_str = " || ".join(match_parts) if match_parts else "(manual / fallback)"
+        else:
+            if prof.match_class:
+                match_parts.append(f"class~={prof.match_class!r}")
+            if prof.match_title:
+                match_parts.append(f"title~={prof.match_title!r}")
+            match_str = ", ".join(match_parts) if match_parts else "(manual / fallback)"
         lines.append(f"  - {name:<12} [turn={prof.turn:>3}°] {match_str}")
         if prof.description:
             lines.append(f"      {prof.description}")

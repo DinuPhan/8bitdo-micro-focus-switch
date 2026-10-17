@@ -172,6 +172,17 @@ def test_youtube_profile_matching_and_actions(tmp_path: Path) -> None:
     prof_gh = cfg.resolve_profile_for_window("firefox", "GitHub - Issues")
     assert prof_gh.name == "browser"
 
+    # Standalone Chrome / Chromium Web App / PWA (with or without YouTube in title)
+    prof_pwa = cfg.resolve_profile_for_window("chrome-youtube.com__-Profile_3", "(729) Matt Pocock - YouTube")
+    assert prof_pwa.name == "youtube"
+
+    prof_pwa_notitle = cfg.resolve_profile_for_window("chrome-youtube.com__-Profile_3", "Arbitrary Video Title")
+    assert prof_pwa_notitle.name == "youtube"
+
+    # Standalone FreeTube desktop app
+    prof_freetube = cfg.resolve_profile_for_window("freetube", "Playing video")
+    assert prof_freetube.name == "youtube"
+
     daemon = FocusSwitchDaemon(cfg)
     ui = _FakeUInput()
     daemon._on_focus_change(ActiveWindow(window_class="firefox", window_title="Some Video - YouTube"))
