@@ -10,13 +10,7 @@ from pathlib import Path
 from typing import AsyncIterator, Callable
 
 
-@dataclass(slots=True, frozen=True)
-class ActiveWindow:
-    """Represents the currently focused window in Hyprland."""
-
-    window_class: str
-    window_title: str
-    address: str = ""
+from .window_watcher import ActiveWindow
 
 
 def find_hyprland_socket2() -> Path | None:

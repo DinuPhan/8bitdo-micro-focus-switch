@@ -13,11 +13,23 @@ from pathlib import Path
 import re
 import selectors
 import sys
-import termios
-import tty
 from typing import Sequence
 
-from evdev import InputDevice, ecodes, list_devices
+try:
+    import termios
+    import tty
+    HAS_TERMIOS = True
+except ImportError:
+    HAS_TERMIOS = False
+
+try:
+    from evdev import InputDevice, ecodes, list_devices
+    HAS_EVDEV = True
+except ImportError:
+    HAS_EVDEV = False
+    InputDevice = object  # type: ignore
+    list_devices = lambda: []  # type: ignore
+    from .protocol import ecodes
 
 from .config import load_config, parse_combo_buttons
 from .protocol import (
@@ -211,6 +223,8 @@ class ChordRecorder:
 
 def find_physical_keyboards() -> list[InputDevice]:
     """Find all real physical keyboards in /dev/input/event*."""
+    if not HAS_EVDEV:
+        return []
     keyboards: list[InputDevice] = []
     for p in list_devices():
         try:
@@ -246,6 +260,12 @@ def capture_keyboard_chord(
         close_when_done = True
 
     if not devices:
+        if not HAS_EVDEV or sys.platform != "linux":
+            raise RuntimeError(
+                f"Interactive keyboard chord listening requires Linux evdev.\n"
+                f"On {sys.platform}, please specify the key binding directly via argument, "
+                f"or edit profiles.toml directly."
+            )
         raise RuntimeError(
             "No accessible physical keyboards found in /dev/input/event*.\n"
             "Ensure you have read permissions on /dev/input (e.g. member of group 'input').\n"

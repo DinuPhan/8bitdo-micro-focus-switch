@@ -7,13 +7,22 @@ import logging
 import os
 from pathlib import Path
 import signal
+import sys
 from typing import Any, Coroutine
-import evdev
-from evdev import InputDevice, UInput, ecodes
+
+try:
+    import evdev
+    from evdev import InputDevice, UInput, ecodes
+    HAS_EVDEV = True
+except ImportError:
+    HAS_EVDEV = False
+    InputDevice = object  # type: ignore
+    UInput = object  # type: ignore
+    from .protocol import ecodes
 
 from .ble import MicroBleSession, find_micro_ble_device
 from .config import AppConfig, ButtonAction, ProfileConfig
-from .hyprland import ActiveWindow, watch_hyprland_focus
+from .window_watcher import ActiveWindow, watch_platform_focus
 from .protocol import (
     FACTORY_EVDEV_TO_BUTTON,
     MICRO_INPUT_NAME_SUBSTRING,
@@ -39,6 +48,8 @@ class _PendingButton:
 
 def find_micro_input_devices() -> list[InputDevice]:
     """Return all /dev/input/event* devices matching the 8BitDo Micro Keyboard."""
+    if not HAS_EVDEV:
+        return []
     matched: list[InputDevice] = []
     for path in evdev.list_devices():
         try:
@@ -62,6 +73,12 @@ def find_micro_input_devices() -> list[InputDevice]:
 
 def check_uinput_access() -> tuple[bool, str]:
     """Check whether /dev/uinput exists and is writable by the current user."""
+    if not HAS_EVDEV or sys.platform != "linux":
+        return (
+            False,
+            f"The 'uinput' backend requires Linux with evdev and /dev/uinput support. "
+            f"On {sys.platform}, please use backend='ble' for direct BLE hardware remapping.",
+        )
     uinput_path = Path("/dev/uinput")
     if not uinput_path.exists():
         return False, "/dev/uinput does not exist (run `sudo modprobe uinput`)"
@@ -501,7 +518,7 @@ class FocusSwitchDaemon:
         tasks: list[asyncio.Task[Any]] = []
 
         async def _focus_task() -> None:
-            async for _ in watch_hyprland_focus(self._on_focus_change):
+            async for _ in watch_platform_focus(self._on_focus_change):
                 pass
 
         tasks.append(asyncio.create_task(_focus_task()))
