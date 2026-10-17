@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 import signal
+from typing import Any, Coroutine
 import evdev
 from evdev import InputDevice, UInput, ecodes
 
@@ -101,6 +102,18 @@ class FocusSwitchDaemon:
         # Physical evdev keycode -> currently physically depressed button name (for hold-and-press chords)
         self._physical_held_buttons: dict[int, str] = {}
         self._ble_trigger = asyncio.Event()
+        # Retain strong references to background execution tasks to prevent premature Python GC
+        self._bg_tasks: set[asyncio.Task[Any]] = set()
+
+    def _create_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any] | None:
+        """Spawn a background coroutine with a strong reference held until completion."""
+        try:
+            task = asyncio.create_task(coro)
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
+            return task
+        except RuntimeError:
+            return None
 
     def reload_config(self) -> None:
         """Reload configuration from disk (triggered by SIGHUP or explicit request)."""
@@ -197,10 +210,7 @@ class FocusSwitchDaemon:
 
     def _emit_solo_down(self, ui: UInput, keycode: int, action: ButtonAction) -> None:
         if action.exec_cmd:
-            try:
-                asyncio.create_task(self._spawn_exec(action.exec_cmd))
-            except RuntimeError:
-                pass
+            self._create_background_task(self._spawn_exec(action.exec_cmd))
         if action.evdev_codes:
             self._held_chords[keycode] = action.evdev_codes
             for code in action.evdev_codes:
@@ -227,10 +237,7 @@ class FocusSwitchDaemon:
                     pending.timer_handle.cancel()
                 if pending.action is not None:
                     if pending.action.exec_cmd:
-                        try:
-                            asyncio.create_task(self._spawn_exec(pending.action.exec_cmd))
-                        except RuntimeError:
-                            pass
+                        self._create_background_task(self._spawn_exec(pending.action.exec_cmd))
                     if pending.action.evdev_codes:
                         for code in pending.action.evdev_codes:
                             ui.write(ecodes.EV_KEY, code, 1)
@@ -345,10 +352,7 @@ class FocusSwitchDaemon:
             # 3. Emit the combo action
             combo_act = combos[matched_combo]
             if combo_act.exec_cmd:
-                try:
-                    asyncio.create_task(self._spawn_exec(combo_act.exec_cmd))
-                except RuntimeError:
-                    pass
+                self._create_background_task(self._spawn_exec(combo_act.exec_cmd))
             if combo_act.evdev_codes:
                 self._active_combos[matched_combo] = combo_act
                 self._held_combos[keycode] = matched_combo
@@ -414,6 +418,8 @@ class FocusSwitchDaemon:
                 except OSError as exc:
                     logger.info("8BitDo Micro disconnected (%s); releasing held keys.", exc)
                 finally:
+                    needs_syn = False
+
                     # Cancel any pending combo timers
                     for p in self._pending_buttons.values():
                         if p.timer_handle is not None:
@@ -425,6 +431,7 @@ class FocusSwitchDaemon:
                         if combo_act.evdev_codes:
                             for code in reversed(combo_act.evdev_codes):
                                 ui.write(ecodes.EV_KEY, code, 0)
+                            needs_syn = True
                     self._active_combos.clear()
                     self._held_combos.clear()
                     self._physical_held_buttons.clear()
@@ -433,9 +440,11 @@ class FocusSwitchDaemon:
                     for held in self._held_chords.values():
                         for code in reversed(held):
                             ui.write(ecodes.EV_KEY, code, 0)
-                    if self._held_chords or self._active_combos:
-                        ui.syn()
+                        needs_syn = True
                     self._held_chords.clear()
+
+                    if needs_syn:
+                        ui.syn()
                     try:
                         dev.ungrab()
                     except Exception:
@@ -449,16 +458,21 @@ class FocusSwitchDaemon:
         """Keep BLE GATT synced to the active profile whenever Hyprland focus changes."""
         last_flashed: str | None = None
         base_record: bytes | None = None
+        cached_address: str | None = self.ble_address
 
         while True:
             await self._ble_trigger.wait()
+            # Debounce rapid focus switches (e.g. fast Alt-Tab or workspace sweeping)
+            await asyncio.sleep(0.3)
             self._ble_trigger.clear()
+
             target_profile = self.active_profile
             if target_profile.name == last_flashed:
                 continue
 
             try:
-                dev = await find_micro_ble_device(address=self.ble_address, timeout=4.0)
+                dev = await find_micro_ble_device(address=cached_address, timeout=4.0)
+                cached_address = dev.address
                 async with MicroBleSession(dev) as session:
                     if base_record is None:
                         base_record = await session.read_config_bytes()
@@ -484,7 +498,7 @@ class FocusSwitchDaemon:
         except (ValueError, NotImplementedError, RuntimeError):
             pass
 
-        tasks: list[asyncio.Task[None]] = []
+        tasks: list[asyncio.Task[Any]] = []
 
         async def _focus_task() -> None:
             async for _ in watch_hyprland_focus(self._on_focus_change):
@@ -498,12 +512,33 @@ class FocusSwitchDaemon:
                 raise PermissionError(msg)
             tasks.append(asyncio.create_task(self._evdev_loop()))
 
-        if self.backend in ("ble", "hybrid"):
+        if self.backend == "ble":
             self._ble_trigger.set()
             tasks.append(asyncio.create_task(self._ble_loop()))
+        elif self.backend == "hybrid":
+            # In hybrid mode: ensure factory keys on hardware via BLE once at startup,
+            # then let uinput handle dynamic remapping with 0ms latency without double-remapping.
+            async def _hybrid_init() -> None:
+                try:
+                    logger.info("Hybrid mode: ensuring 8BitDo Micro hardware is in factory mode over BLE...")
+                    dev = await find_micro_ble_device(address=self.ble_address, timeout=4.0)
+                    async with MicroBleSession(dev) as session:
+                        base_record = await session.read_config_bytes()
+                        from .protocol import get_builtin_hardware_preset
+                        factory_hw = get_builtin_hardware_preset("factory")
+                        payload = factory_hw.to_bytes(base=base_record)
+                        # Write factory profile to controller RAM (save=False to preserve EEPROM flash endurance)
+                        await session.write_config_bytes(payload, save=False)
+                        logger.info("Hybrid mode: 8BitDo Micro reset to factory scancodes (RAM).")
+                except Exception as exc:
+                    logger.warning("Hybrid mode: BLE hardware init failed (%s); continuing with uinput.", exc)
+
+            tasks.append(asyncio.create_task(_hybrid_init()))
 
         try:
             await asyncio.gather(*tasks)
         finally:
             for t in tasks:
                 t.cancel()
+            for bg in list(self._bg_tasks):
+                bg.cancel()

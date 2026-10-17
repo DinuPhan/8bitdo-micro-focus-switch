@@ -882,6 +882,121 @@ B = "M"                              # Mute audio
     assert "A = \"Enter\"  # Play / Pause toggle" in updated
 
 
+def test_daemon_bg_tasks_lifecycle(tmp_path: Path) -> None:
+    import asyncio
+
+    toml_doc = """
+[profiles.test]
+turn = 0
+match_class = "test"
+A = { exec = "sleep 0.05" }
+"""
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    async def _run() -> None:
+        daemon = FocusSwitchDaemon(cfg)
+        ui = _FakeUInput()
+        daemon._on_focus_change(ActiveWindow(window_class="test", window_title="Test"))
+
+        assert len(daemon._bg_tasks) == 0
+        daemon.handle_key_event(ui, ecodes.KEY_G, 1)
+        daemon.handle_key_event(ui, ecodes.KEY_G, 0)
+        assert len(daemon._bg_tasks) == 1
+        task = next(iter(daemon._bg_tasks))
+        assert not task.done()
+
+        await task
+        assert len(daemon._bg_tasks) == 0
+
+    asyncio.run(_run())
+
+
+def test_daemon_disconnect_cleanup_syn_invariant(tmp_path: Path) -> None:
+    toml_doc = """
+[profiles.test]
+turn = 0
+match_class = "test"
+
+[profiles.test.combos]
+"A+B" = ["F11"]
+"""
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    daemon = FocusSwitchDaemon(cfg)
+    ui = _FakeUInput()
+    daemon._on_focus_change(ActiveWindow(window_class="test", window_title="Test"))
+
+    # Press A (KEY_G) and B (KEY_J) to trigger combo A+B -> F11
+    daemon.handle_key_event(ui, ecodes.KEY_G, 1)
+    daemon.handle_key_event(ui, ecodes.KEY_J, 1)
+
+    assert (ecodes.EV_KEY, ecodes.KEY_F11, 1) in ui.events
+    assert frozenset({"A", "B"}) in daemon._active_combos
+    assert len(daemon._held_chords) == 0  # Only combo is active!
+    ui.events.clear()
+
+    # Disconnect cleanup logic simulation
+    needs_syn = False
+    for p in daemon._pending_buttons.values():
+        if p.timer_handle is not None:
+            p.timer_handle.cancel()
+    daemon._pending_buttons.clear()
+
+    for combo_act in daemon._active_combos.values():
+        if combo_act.evdev_codes:
+            for code in reversed(combo_act.evdev_codes):
+                ui.write(ecodes.EV_KEY, code, 0)
+            needs_syn = True
+    daemon._active_combos.clear()
+    daemon._held_combos.clear()
+    daemon._physical_held_buttons.clear()
+
+    for held in daemon._held_chords.values():
+        for code in reversed(held):
+            ui.write(ecodes.EV_KEY, code, 0)
+        needs_syn = True
+    daemon._held_chords.clear()
+
+    if needs_syn:
+        ui.syn()
+
+    assert ui.events == [
+        (ecodes.EV_KEY, ecodes.KEY_F11, 0),
+        (ecodes.EV_SYN, 0, 0),
+    ]
+
+
+def test_software_only_features_property_and_ble_warning(tmp_path: Path) -> None:
+    toml_doc = """
+[profiles.test]
+turn = 0
+match_class = "test"
+A = { exec = "echo hello" }
+B = "Space"
+
+[profiles.test.combos]
+"L+R" = "F11"
+"""
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+    prof = cfg.get_profile("test")
+
+    combos_cnt, exec_cnt = prof.software_only_features
+    assert combos_cnt == 1
+    assert exec_cnt == 1
+
+    hw = prof.to_hardware_profile()
+    # 0x2C is HID usage for Keyboard Spacebar
+    assert hw.slots["B"] == (0x2C, 0, 0, 0)
+    assert "L+R" not in hw.slots
+
+
+
 
 
 

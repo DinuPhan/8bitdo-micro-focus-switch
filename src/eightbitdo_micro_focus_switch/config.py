@@ -172,8 +172,23 @@ class ProfileConfig:
             return False
         return True
 
+    @property
+    def software_only_features(self) -> tuple[int, int]:
+        """Return (num_combos, num_exec_cmds) defined in this profile that are software-only."""
+        num_combos = len(self.combos)
+        num_exec = sum(1 for a in self.buttons.values() if a.exec_cmd) + sum(
+            1 for a in self.combos.values() if a.exec_cmd
+        )
+        return num_combos, num_exec
+
     def to_hardware_profile(self, *, enabled: bool = True) -> MicroHardwareProfile:
-        """Convert this profile into a 180-byte MicroHardwareProfile for BLE GATT flashing."""
+        """Convert this profile into a 180-byte MicroHardwareProfile for BLE GATT flashing.
+
+        Note: The 180-byte hardware record_micro format only stores 1-to-1 button mappings
+        (up to 4 HID scancodes per physical button). Combos and shell commands (exec_cmd)
+        are software-level features handled by the daemon via uinput and cannot be stored
+        in hardware memory.
+        """
         slots: dict[str, tuple[int, int, int, int]] = {}
         for btn in PHYSICAL_BUTTONS:
             action = self.buttons.get(btn)

@@ -174,6 +174,15 @@ async def _cmd_ble_write(args: argparse.Namespace) -> int:
         hw_prof = prof.to_hardware_profile(enabled=not is_factory)
         hw_prof.turn = args.turn if args.turn in (0, 1, 2, 3) else {0: 0, 90: 1, 180: 2, 270: 3}[args.turn]
 
+    num_combos, num_exec = prof.software_only_features
+    if num_combos > 0 or num_exec > 0:
+        print(
+            f"\n⚠️  Notice: Profile {prof.name!r} contains software-only features "
+            f"({num_combos} combo(s), {num_exec} shell command(s)).\n"
+            "   The 180-byte 8BitDo Micro hardware memory only supports 1-to-1 button mappings.\n"
+            "   Combos and shell commands are handled by the daemon (uinput backend) and will not exist in hardware.\n"
+        )
+
     print(f"Flashing profile {prof.name!r} (enabled={hw_prof.enabled}, turn={hw_prof.turn_degrees}°) to '80EL' ...")
     snapshot = await write_hardware_profile(
         hw_prof,
