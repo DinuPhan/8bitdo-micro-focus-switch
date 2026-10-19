@@ -104,6 +104,9 @@ select:focus, input[type="text"]:focus {
 
 /* Buttons */
 button {
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
   background-color: var(--bg-overlay);
   color: var(--text-main);
   border: 1px solid var(--border);
@@ -116,6 +119,11 @@ button {
   align-items: center;
   gap: 6px;
   transition: all 0.15s ease;
+}
+
+button:focus,
+button:focus-visible {
+  outline: none;
 }
 
 button:hover {
@@ -152,9 +160,14 @@ button.danger {
   padding: 0 20px;
   display: flex;
   gap: 8px;
+  position: relative;
+  z-index: 5;
 }
 
 .tab-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -168,6 +181,12 @@ button.danger {
 .tab-btn:hover {
   background: transparent;
   color: var(--text-main);
+}
+
+.tab-btn:focus,
+.tab-btn:focus-visible {
+  outline: none;
+  background: transparent;
 }
 
 .tab-btn.active {
@@ -208,7 +227,8 @@ button.danger {
 svg#mapper-svg {
   max-width: 100%;
   height: auto;
-  filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.5));
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
 .callout-card-group {
@@ -217,14 +237,13 @@ svg#mapper-svg {
 
 .callout-card-group rect.card-bg {
   cursor: pointer;
-  transition: stroke 0.15s ease, stroke-width 0.15s ease, fill 0.15s ease, filter 0.15s ease;
+  transition: stroke 0.15s ease, stroke-width 0.15s ease, fill 0.15s ease;
 }
 
 .callout-card-group:hover rect.card-bg {
   stroke: var(--accent-blue) !important;
   stroke-width: 2px !important;
   fill: #26273b !important;
-  filter: drop-shadow(0 2px 8px rgba(137, 180, 250, 0.35));
 }
 
 .callout-card-group text {
@@ -233,12 +252,11 @@ svg#mapper-svg {
 
 #svg-pins-layer circle {
   cursor: pointer;
-  transition: r 0.15s ease, filter 0.15s ease;
+  transition: r 0.15s ease;
 }
 
 #svg-pins-layer circle:hover {
   r: 7.5;
-  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.9));
 }
 
 /* Combos Panel */
@@ -286,16 +304,16 @@ svg#mapper-svg {
   inset: 0;
   background-color: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(4px);
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   z-index: 100;
   opacity: 0;
-  pointer-events: none;
   transition: opacity 0.2s ease;
 }
 
 .modal-backdrop.open {
+  display: flex;
   opacity: 1;
   pointer-events: auto;
 }
