@@ -214,8 +214,10 @@ function renderSvgCallouts() {
     pin.setAttribute("r", "5");
     pin.setAttribute("fill", meta.color);
     pin.setAttribute("filter", "url(#glow)");
-    pin.setAttribute("style", "cursor: pointer;");
-    pin.addEventListener("click", () => openBindingModal("button", btnKey));
+    pin.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openBindingModal("button", btnKey);
+    });
     svgPinsLayer.appendChild(pin);
 
     // 2. Draw leader polyline
@@ -308,7 +310,10 @@ function renderSvgCallouts() {
       cardGroup.appendChild(txtMain);
     }
 
-    cardGroup.addEventListener("click", () => openBindingModal("button", btnKey));
+    cardGroup.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openBindingModal("button", btnKey);
+    });
     svgCalloutsLayer.appendChild(cardGroup);
   }
 }

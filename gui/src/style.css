@@ -213,16 +213,32 @@ svg#mapper-svg {
 
 .callout-card-group {
   cursor: pointer;
-  transition: transform 0.15s ease;
+}
+
+.callout-card-group rect.card-bg {
+  cursor: pointer;
+  transition: stroke 0.15s ease, stroke-width 0.15s ease, fill 0.15s ease, filter 0.15s ease;
 }
 
 .callout-card-group:hover rect.card-bg {
   stroke: var(--accent-blue) !important;
-  stroke-width: 1.8px !important;
+  stroke-width: 2px !important;
+  fill: #26273b !important;
+  filter: drop-shadow(0 2px 8px rgba(137, 180, 250, 0.35));
 }
 
-.callout-card-group:hover {
-  transform: scale(1.02);
+.callout-card-group text {
+  pointer-events: none;
+}
+
+#svg-pins-layer circle {
+  cursor: pointer;
+  transition: r 0.15s ease, filter 0.15s ease;
+}
+
+#svg-pins-layer circle:hover {
+  r: 7.5;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.9));
 }
 
 /* Combos Panel */
