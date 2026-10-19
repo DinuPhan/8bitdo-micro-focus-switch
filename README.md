@@ -1,79 +1,43 @@
 # 8bitdo-micro-focus-switch
- 
-Turn your **8BitDo Micro** or **8BitDo Zero 2** into the ultimate one-handed shortcut remote on Linux, Windows, and macOS. Automatically switches button mappings based on which application is currently in focus — no phone required.
+
+A lightweight Linux tool (with experimental macOS and Windows support) that automatically switches button mappings on your **8BitDo Micro** and **8BitDo Zero 2** depending on which application window is currently active.
 
 ---
 
-## Why this exists
+## Why?
 
-The **8BitDo Micro** (16 buttons) and **8BitDo Zero 2** (12 buttons) are featherlight, ultra-compact controllers. In Keyboard mode (`K` on Micro; `R + START` on Zero 2), they are hands-down the best one-handed macro pads for:
-- Terminal coding & AI prompt workflows
-- Relaxing back while watching YouTube or movies
-- Reviewing Anki flashcards
-- Smooth article and web browsing
+<p align="center">
+  <img src="assets/my_tiny_trex_arm.jpg" alt="8BitDo Micro in hand" width="380" />
+</p>
 
-**The catch with the standard setup:**
-- **Single static profile**: Official companion tools only configure a single static layout on the controller. They have no awareness of which desktop window or application is currently in focus.
-- **Multitasking friction**: When switching between Anki (flashcards), YouTube (media navigation), a browser, and your terminal or code editor, you're either stuck with conflicting shortcuts or forced to disconnect and reconfigure each time.
-- **Desktop limitations**: Standard setups lack native desktop OS integration like executing arbitrary shell commands, multi-button chords (`L1 + R1 -> Super + K`), or instant sub-millisecond window-focus remapping.
+I originally bought an 8BitDo Micro to play retro games with RetroArch on Omarchy (I'm a newcomer to Omarchy and custom Linux window managers).
 
-**With `8bitdo-micro-focus-switch`:**
-- **Zero-touch automatic switching**: Your controller dynamically rebinds its keys the instant you change active windows on your computer.
-- **Unified Micro & Zero 2 support**: Full dynamic remapping and profile management for both the **8BitDo Micro** (16 buttons) and **8BitDo Zero 2** (12 buttons).
-- **Visual Keymap HUD**: Forget which button does what in each app? One command or hotkey pops up an interactive visual diagram with glowing pointers and callout labels.
-- **Desktop superpowers**:
-  - Multi-button combos & chording (e.g. `L + R` -> `Super + K`, `Select + Start` -> command palette).
-  - On-the-fly D-pad rotation (0° / 90° / 180° / 270°) for comfortable one-handed vertical holding.
-  - Arbitrary shell commands (`exec: playerctl play-pause`, `exec: notify-send ...`).
-  - Cross-platform support across Linux (`uinput`), macOS (Event Tap), and Windows (Low-Level Hooks).
-  - Phone-free direct BLE hardware flashing for 8BitDo Micro when standalone hardware memory is desired.
+Pretty quickly, I realized this tiny controller could make a great one-handed shortcut pad for terminal work and CLI AI assistants like Claude Code and Antigravity CLI (`agy`), as well as everyday tasks like navigating YouTube, media players, or reviewing Anki flashcards.
 
----
+The frustrating part with the standard setup was the static profile: the controller only keeps one layout at a time. If I was coding in a terminal and wanted to switch over to YouTube or Anki, I had to disconnect Bluetooth, pull out a phone, re-flash the key mappings in the companion app, and reconnect. Doing that multiple times a day got annoying fast.
 
-## Visual Keymap Diagram & HUD
+I wanted something that runs quietly in the background, tracks whatever window I currently have in focus, and switches the button mappings on the fly — with zero manual fiddling, no phone, and no Bluetooth disconnects.
 
-Pressing buttons shouldn't feel like a memory test. You can display your active keymap at any time:
-
-```bash
-# Auto-detects your active window and pops up its controller keymap:
-8bitdo-micro-focus-switch show
-
-# View a specific profile diagram (e.g. YouTube, AGY, Anki):
-8bitdo-micro-focus-switch show youtube
-8bitdo-micro-focus-switch show agy
-
-# Open an interactive viewer in your browser with tabs for every profile:
-8bitdo-micro-focus-switch show --interactive
-
-# Save as a self-contained SVG or PNG:
-8bitdo-micro-focus-switch show youtube -o youtube_keymap.svg
-8bitdo-micro-focus-switch show agy --format png -o agy_keymap.png
-```
-
-### In-Game Style HUD on Hyprland
-
-Add this to your `~/.config/hypr/hyprland.conf` to pop up a floating keymap HUD whenever you press `Super+M`:
-
-```hyprlang
-# Floating overlay window for the keymap diagram
-windowrulev2 = float, class:^(imv)$, title:^(8bitdo-micro.*)
-bind = $mainMod, M, exec, 8bitdo-micro-focus-switch show --no-wait
-```
+Along the way, I also added:
+- Support for the 8BitDo Zero 2 (which sends the same factory keyboard characters).
+- Multi-button combos (like `L1 + R1` for your application launcher or command palette).
+- D-pad rotation (`turn = 90`) for holding the controller vertically in one hand.
+- An interactive visual HUD to quickly remind yourself what each button does in the active app.
 
 ---
 
 ## Built-in Profiles
 
-Out of the box, `8bitdo-micro-focus-switch` comes configured for popular apps:
+Out of the box, `8bitdo-micro-focus-switch` comes configured with handy defaults for popular apps:
 
 | Profile | Trigger Window | What the buttons do |
 | :--- | :--- | :--- |
-| **`agy`** *(default)* | Terminal / Ghostty | `Shift+Enter` (new line), `Enter`, `@` (files), `/` (commands), `Backspace`, `PageUp/Down` |
+| **`agy`** *(default)* | Terminal / Ghostty / Alacritty | `Shift+Enter` (new line), `Enter`, `@` (files), `/` (commands), `Backspace`, `PageUp/Down` |
 | **`youtube`** | Browser watching YouTube | `Space` (play/pause), `M` (mute), `F` (fullscreen), `C` (captions), `J`/`L` (±10s seek), `Shift+,`/`Shift+.` (speed), `Shift+N` (next video) |
 | **`anki`** | Anki Flashcards | `1` (Again), `2` (Good), `4` (Easy), `Space` (Show answer), `Ctrl+Shift+D`, `Ctrl+Alt+N`, `Ctrl+Z` |
 | **`browser`** | Firefox, Chromium, Zen, Brave | `PageUp/Down`, `Space`, `Ctrl+T` (new tab), `Ctrl+W` (close), `Ctrl+Shift+T` (reopen), Tab switching |
 | **`media`** | VLC, MPV | `Space` (play/pause), `F` (fullscreen), `M` (mute), `[` / `]` (speed), `9` / `0` (volume) |
-| **`factory`** | Any | Clean single scancodes (`c` through `t`) on all 16 buttons |
+| **`factory`** | Any | Clean single scancodes (`c` through `t`) on all buttons |
 
 ---
 
@@ -107,7 +71,7 @@ Both controllers must be paired in **Keyboard Mode** so the daemon can intercept
 > [!TIP]
 > **Subsequent Connections**: After pairing once, simply tap **`START`** (Zero 2) or flick to **`K`** (Micro) to wake the controller. It reconnects to your computer automatically, and the daemon re-attaches instantly with zero manual intervention.
 
-### 3. Quick Status Check
+### 3. Check Status
 
 ```bash
 # Verify your controller is connected and see the active profile:
@@ -115,6 +79,62 @@ Both controllers must be paired in **Keyboard Mode** so the daemon can intercept
 
 # Or preview your keymap layout visually:
 8bitdo-micro-focus-switch show
+```
+
+---
+
+## Desktop Graphical App (Tauri GUI)
+
+Prefer a visual interface over terminal commands? A desktop application built with Tauri is also available:
+
+<p align="center">
+  <img src="assets/tauri_gui_preview.png" alt="8BitDo Micro Focus Switch GUI Preview" width="680" />
+</p>
+
+- **Visual Mapper**: Interactive controller contour with real-time callouts for every profile.
+- **Combos & Chords Editor**: Configure multi-button hotkeys with intuitive pickers.
+- **Active Window Auto-Matching**: Detects the focused window with one click to bind profiles.
+- **Live Daemon Status**: Shows real-time connection status of the background focus switcher.
+
+Pre-built Linux packages (`.AppImage`, `.deb`) are available on [Releases](https://github.com/DinuPhan/8bitdo-micro-focus-switch/releases). Experimental builds for macOS (`.dmg`) and Windows (`.msi`, `.exe`) are also provided for testing and feedback.
+
+> [!NOTE]
+> **Platform Status**: Linux (Hyprland / `evdev` / `uinput`) is the primary, battle-tested platform where this tool was created. Windows and macOS support is currently **experimental / in active development** and has not been fully verified across all window managers — testing and feedback are very welcome!
+
+---
+
+## Visual Keymap Diagram & HUD
+
+Pressing buttons shouldn't feel like a memory test. You can display your active keymap at any time:
+
+<p align="center">
+  <img src="assets/keymap_diagram.svg" alt="Visual Keymap Diagram HUD" width="700" />
+</p>
+
+```bash
+# Auto-detects your active window and pops up its controller keymap:
+8bitdo-micro-focus-switch show
+
+# View a specific profile diagram (e.g. YouTube, AGY, Anki):
+8bitdo-micro-focus-switch show youtube
+8bitdo-micro-focus-switch show agy
+
+# Open an interactive viewer in your browser with tabs for every profile:
+8bitdo-micro-focus-switch show --interactive
+
+# Save as a self-contained SVG or PNG:
+8bitdo-micro-focus-switch show youtube -o youtube_keymap.svg
+8bitdo-micro-focus-switch show agy --format png -o agy_keymap.png
+```
+
+### In-Game Style HUD on Hyprland
+
+Add this to your `~/.config/hypr/hyprland.conf` to pop up a floating keymap HUD whenever you press `Super+M`:
+
+```hyprlang
+# Floating overlay window for the keymap diagram
+windowrulev2 = float, class:^(imv)$, title:^(8bitdo-micro.*)
+bind = $mainMod, M, exec, 8bitdo-micro-focus-switch show --no-wait
 ```
 
 ---
@@ -132,7 +152,7 @@ These are the primary commands you will use daily:
 8bitdo-micro-focus-switch bind agy A
 8bitdo-micro-focus-switch bind agy "L+R"
 
-# 3. Browse or search bindable keys catalog (like the 8BitDo app):
+# 3. Browse or search bindable keys catalog:
 8bitdo-micro-focus-switch keys
 8bitdo-micro-focus-switch keys volume
 
@@ -146,7 +166,7 @@ These are the primary commands you will use daily:
 # 6. Reload profiles into the running daemon (zero downtime, no disconnect):
 8bitdo-micro-focus-switch reload
 
-# 7. Check Hyprland focus status and connected controllers:
+# 7. Check focus status and connected controllers:
 8bitdo-micro-focus-switch status
 
 # 8. Scan for nearby controllers:
@@ -156,8 +176,6 @@ These are the primary commands you will use daily:
 ---
 
 ## Interactive Key Binder (`bind`), Recorder (`record`), & Catalog (`keys`)
-
-Never struggle to remember exact key names, scancodes, or modifier spellings:
 
 ### 1. Interactive Key Binder (`bind`)
 Simply press the shortcut on your physical keyboard:
@@ -173,7 +191,7 @@ Simply press the shortcut on your physical keyboard:
 1. It waits: `>> Listening for keyboard input for [agy.A]... Press any key or combination (ESC to cancel):`
 2. Press `Ctrl+Shift+P` (or `Space`, `Super+K`, `PageUp`) on your keyboard.
 3. It detects the chord, saves it to `~/.config/8bitdo-micro/profiles.toml`, and sends a zero-downtime `SIGHUP` reload signal to the running daemon.
-4. **Discard with `ESC`**: Pressing `ESC` at any time immediately cancels the wait without saving any changes.
+4. **Discard with `ESC`**: Pressing `ESC` at any time cancels without saving.
 
 ### 2. Live Chord Recorder (`record`)
 Press keys on your keyboard to inspect their exact chord names and TOML representations:
@@ -182,7 +200,7 @@ Press keys on your keyboard to inspect their exact chord names and TOML represen
 ```
 
 ### 3. Bindable Keys Catalog (`keys`)
-Just like the 8BitDo mobile app, browse all supported keys categorized into Modifiers, Navigation, Actions, Media & Volume, Function Keys, and Symbols:
+Browse all supported keys categorized into Modifiers, Navigation, Actions, Media & Volume, Function Keys, and Symbols:
 ```bash
 # View complete categorized catalog:
 8bitdo-micro-focus-switch keys
@@ -196,20 +214,20 @@ Just like the 8BitDo mobile app, browse all supported keys categorized into Modi
 
 ## Customizing Mappings in Editor (`config`)
 
-All profiles live in `~/.config/8bitdo-micro/profiles.toml`. You can manage and edit your profiles effortlessly using the `config` command:
+All profiles live in `~/.config/8bitdo-micro/profiles.toml`. You can manage and edit your profiles easily:
 
 ```bash
 # 1. Open the configuration file in your editor ($EDITOR or Neovim):
 8bitdo-micro-focus-switch config
 
-# 2. Jump directly to an existing profile to tweak its buttons:
+# 2. Jump directly to an existing profile:
 8bitdo-micro-focus-switch config youtube
 8bitdo-micro-focus-switch config agy
 
 # 3. Add a new app profile (e.g. Spotify, Discord, VS Code):
 8bitdo-micro-focus-switch config spotify
-# -> If the profile doesn't exist yet, it asks to create it, generates a clean
-#    starter template with all 16 buttons, merges it into profiles.toml,
+# -> If the profile doesn't exist yet, it asks to create it, generates a starter
+#    template with all buttons, merges it into profiles.toml,
 #    and opens your editor directly at the new section!
 
 # 4. List all configured profiles with line numbers:
@@ -219,16 +237,14 @@ All profiles live in `~/.config/8bitdo-micro/profiles.toml`. You can manage and 
 8bitdo-micro-focus-switch reload
 ```
 
-> **Automatic In-Process Reload**: When you edit profiles via `8bitdo-micro-focus-switch config` or bind keys via `8bitdo-micro-focus-switch bind`, saving automatically validates syntax and sends a `SIGHUP` reload signal to the running daemon. Your controller never disconnects, and virtual keyboard grabs remain active.
-
 ### Profile Example
 
-To add or customize an app, a profile looks like this:
+A profile looks like this:
 
 ```toml
 [profiles.spotify]
 description = "Spotify Music Controller"
-match_class = "spotify"           # Regex matched against window class (from hyprctl)
+match_class = "spotify"           # Regex matched against window class (from compositor/OS)
 turn = 0                          # 0 = normal horizontal, 90 = held vertically
 
 # Button mappings (use friendly names or chords with "+"):
@@ -239,7 +255,7 @@ Y = "Ctrl+Left"                   # Previous Track
 L = "Ctrl+Down"                   # Volume Down
 R = "Ctrl+Up"                     # Volume Up
 SELECT = "Esc"
-START = "exec:playerctl play-pause" # You can even run shell commands!
+START = "exec:playerctl play-pause" # You can also run shell commands!
 STAR = "None"
 HOME = "Super"
 UP = "Up"
@@ -248,7 +264,7 @@ LEFT = "Left"
 RIGHT = "Right"
 ```
 
-> **Inline Descriptions & Tooltips**: Single-line comments (e.g. `# Play / Pause`) written inline with button or combo mappings are automatically parsed and displayed as visual subtitles and interactive hover tooltips in `show` keymap diagrams!
+> **Inline Descriptions & Tooltips**: Single-line comments (e.g. `# Play / Pause`) written inline with button or combo mappings are automatically parsed and displayed as visual subtitles and interactive hover tooltips in `show` keymap diagrams.
 
 ### Button Names Reference
 
@@ -265,7 +281,7 @@ RIGHT = "Right"
 
 ### Holding the Controller Vertically (`turn = 90`)
 
-If you like holding the controller vertically in one hand (e.g. for reading or flashcards), set `turn = 90` in your profile. The D-pad automatically rotates so physical "Up" continues pointing in the direction you expect!
+If you like holding the controller vertically in one hand (e.g. for reading or flashcards), set `turn = 90` in your profile. The D-pad automatically rotates so physical "Up" continues pointing in the direction you expect.
 
 ### Matching Web Apps & PWAs (e.g. YouTube, Notion, Spotify)
 
@@ -276,7 +292,6 @@ You can match either using `match_rules` (for multiple OR conditions) or regexes
 ```toml
 [profiles.youtube]
 description = "YouTube Video Playback in Browser or Standalone Web App"
-# Match standalone PWA (any title) OR normal browser tab with YouTube in title:
 match_rules = [
     { class = ".*youtube.*|freetube" },
     { class = "^(firefox|brave-browser|chromium|google-chrome|zen|vivaldi-stable)$", title = ".*(YouTube|- YouTube).*" },
@@ -297,13 +312,11 @@ You can map simultaneous button presses (chords) into hotkeys or shell commands!
 - **Simultaneous & Hold-and-Press**: Supports both simultaneous chording (~50ms) and holding a button as a modifier (e.g. holding `L2` while tapping `LEFT`).
 - **Zero-Latency Solo Buttons**: Buttons that are not part of any combo fire immediately with `0ms` delay.
 - **Fast Tap Guarantee**: Tapping a combo button quickly will still register its solo key instantly upon release.
-- **Visual Diagram Integration**: Configured combos appear as dedicated glowing badges at the bottom of the visual keymap!
-
-> **Fun Fact**: Supporting 2-button combos expands 16 physical buttons into **136 unique actions per profile** ($\binom{16}{1} + \binom{16}{2} = 16 + 120$) — instantly outnumbering a standard 104-key desktop keyboard on a 24-gram keychain controller!
+- **Visual Diagram Integration**: Configured combos appear as dedicated glowing badges at the bottom of the visual keymap.
 
 ### Global Base Combos (`[profiles.global]` or `[profiles.all]`)
 
-Want a combo to work everywhere across all apps without copy-pasting it into every profile? Define it under `[profiles.global.combos]` (or `[profiles.all.combos]`):
+Want a combo to work everywhere across all apps without copy-pasting it into every profile? Define it under `[profiles.global.combos]`:
 
 ```toml
 [profiles.global.combos]
@@ -312,19 +325,13 @@ Want a combo to work everywhere across all apps without copy-pasting it into eve
 ```
 
 - **Inherited by Default**: All profiles (`agy`, `anki`, `youtube`, `browser`, etc.) automatically inherit these combos.
-- **Profile Overrides Take Precedence**: If an individual profile defines its own combo (e.g., `[profiles.youtube.combos] "L+R" = "F"`), that specific profile's combo takes precedence over the global default.
-- **Quick CLI Binding**: You can bind global combos directly:
-  ```bash
-  8bitdo-micro-focus-switch bind global "L+R"
-  ```
-
-> **Hardware vs. Software Mode**: Multi-button combos run seamlessly in software daemon mode (`uinput`). The 8BitDo Micro microcontroller's onboard memory only holds 18 single-button slots, so BLE GATT hardware reflash only stores single button mappings.
+- **Profile Overrides**: If an individual profile defines its own combo (e.g., `[profiles.youtube.combos] "L+R" = "F"`), that specific profile's combo takes precedence over the global default.
 
 ---
 
-## Direct Hardware Flasher (No Phone Needed)
+## Direct Hardware Flasher (8BitDo Micro Only)
 
-If you prefer to flash a profile directly into the controller's onboard memory (so it stays even if you take the controller to another computer):
+If you prefer to flash a profile directly into the 8BitDo Micro's onboard memory (so it stays even if you plug into another computer without this tool installed):
 
 ```bash
 # Flash any profile directly over Bluetooth:
@@ -338,21 +345,18 @@ If you prefer to flash a profile directly into the controller's onboard memory (
 
 ---
 
-## Situational & Setup Commands
+## Setup & Situational Commands
 
-These commands are only needed for one-time environment setup or advanced usage:
+These commands are only needed for one-time environment setup:
 
-### 1. `install-udev` (One-time setup for Combos / uinput mode)
+### 1. `install-udev` (One-time setup for Combos / uinput mode on Linux)
 
 ```bash
 8bitdo-micro-focus-switch install-udev
 ```
 
-- **When is this needed?**
-  - **REQUIRED** if you use multi-button combos/chords (e.g., `L1 + R1 -> Super + K`).
-  - **REQUIRED** if you use shell execution commands (`exec: ...`) or instant `<1ms` software focus remapping.
-- **When is this NOT needed?**
-  - If you only use direct BLE hardware flashing (`8bitdo-micro-focus-switch ble write <profile>`) to burn profiles to the controller's onboard memory, you do **not** need `install-udev`.
+- **REQUIRED** if you use multi-button combos/chords (e.g., `L1 + R1 -> Super + K`) or instant `<1ms` software focus remapping via `/dev/uinput`.
+- **NOT needed** if you only use direct BLE hardware flashing (`8bitdo-micro-focus-switch ble write <profile>`).
 
 ### 2. `install-service` (Auto-start Daemon on Login)
 
@@ -363,16 +367,15 @@ systemctl --user daemon-reload
 systemctl --user enable --now 8bitdo-micro-focus-switch.service
 ```
 
-- **When is this needed?**
-  - **Optional / Situational**: Use this if you want the focus-aware remapper daemon to run seamlessly in the background as a system service.
-  - If you prefer running `8bitdo-micro-focus-switch daemon` manually in a terminal, you do not need this service.
-
 ---
 
-## More Resources
+## Disclaimer
 
-- [**ARCHITECTURE.md**](ARCHITECTURE.md): Deep dive into the reverse-engineered 180-byte BLE GATT protocol, packet structures, CRC-16 algorithm, and latency models.
-- [**AGENTS.md**](AGENTS.md): Guidelines and tips for AI coding agents to configure and generate new profiles automatically.
+This is an independent, community-driven open-source project. It is not affiliated with, endorsed by, sponsored by, or in any way officially connected with Shenzhen 8BitDo Tech Co., Ltd. (8BitDo) or any of its subsidiaries or affiliates.
+
+The names "8BitDo", "8BitDo Micro", and "8BitDo Zero 2" as well as related trade names, trademarks, and logos are the property of their respective owners and are used here solely for technical identification, compatibility, and interoperability purposes.
+
+The Bluetooth Low Energy (BLE) GATT configuration protocol used by the 8BitDo Micro was analyzed independently for personal interoperability and open-source tooling. This software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability arising from, out of, or in connection with the software or the use or other dealings in the software.
 
 ---
 

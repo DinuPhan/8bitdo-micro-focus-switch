@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" font-family="DejaVu Sans, Noto Sans, sans-serif">
+  <rect width="1200" height="650" fill="#11111b" rx="16" />
+  <defs>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <linearGradient id="card-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1e2e" />
+      <stop offset="100%" stop-color="#181825" />
+    </linearGradient>
+  </defs>
+  <text x="600" y="38" text-anchor="middle" fill="#cdd6f4" font-size="22" font-weight="bold" letter-spacing="1">8BitDo Micro Keymap — AGY</text>
+  <text x="600" y="60" text-anchor="middle" fill="#89b4fa" font-size="12" font-weight="600">Mode: Keyboard (K)  •  D-Pad Turn: Normal (0°)</text>
+  <text x="600" y="80" text-anchor="middle" fill="#a6adc8" font-size="12">Antigravity (agy) / Terminal Coding Profile (captured from controller)</text>
+  <image href="data:image/png;base64,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" x="334" y="220" width="532" height="329" />
+  <polyline points="474,272 474,120 330,105 280,105" fill="none" stroke="#fab387" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="474" cy="272" r="4.5" fill="#fab387" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(30,87)">
+    <title>L1: Tab</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#fab387" fill-opacity="0.18" stroke="#fab387" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#fab387" font-size="11" font-weight="bold">L1</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Tab</text>
+  </g>
+  <polyline points="524,272 524,180 350,165 280,165" fill="none" stroke="#f38ba8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="524" cy="272" r="4.5" fill="#f38ba8" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(30,147)">
+    <title>L2: Shift</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#f38ba8" fill-opacity="0.18" stroke="#f38ba8" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#f38ba8" font-size="11" font-weight="bold">L2</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Shift</text>
+  </g>
+  <polyline points="489,346 430,265 340,225 280,225" fill="none" stroke="#a6e3a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="489" cy="346" r="4.5" fill="#a6e3a1" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(30,207)">
+    <title>▲ UP: Up</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#a6e3a1" fill-opacity="0.18" stroke="#a6e3a1" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#a6e3a1" font-size="11" font-weight="bold">▲ UP</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Up</text>
+  </g>
+  <polyline points="460,375 380,305 340,285 280,285" fill="none" stroke="#a6e3a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="460" cy="375" r="4.5" fill="#a6e3a1" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(30,267)">
+    <title>◀ LEFT: Left</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#a6e3a1" fill-opacity="0.18" stroke="#a6e3a1" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#a6e3a1" font-size="11" font-weight="bold">◀ LEFT</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Left</text>
+  </g>
+  <polyline points="542,334 480,335 380,345 280,345" fill="none" stroke="#89b4fa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="542" cy="334" r="4.5" fill="#89b4fa" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(30,327)">
+    <title>- SELECT: Esc</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#89b4fa" fill-opacity="0.18" stroke="#89b4fa" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#89b4fa" font-size="11" font-weight="bold">- SELECT</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Esc</text>
+  </g>
+  <polyline points="489,404 430,405 360,405 280,405" fill="none" stroke="#a6e3a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="489" cy="404" r="4.5" fill="#a6e3a1" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(30,387)">
+    <title>▼ DOWN: Down</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#a6e3a1" fill-opacity="0.18" stroke="#a6e3a1" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#a6e3a1" font-size="11" font-weight="bold">▼ DOWN</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Down</text>
+  </g>
+  <polyline points="518,375 480,445 380,465 280,465" fill="none" stroke="#a6e3a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="518" cy="375" r="4.5" fill="#a6e3a1" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(30,447)">
+    <title>▶ RIGHT: Right</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#a6e3a1" fill-opacity="0.18" stroke="#a6e3a1" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#a6e3a1" font-size="11" font-weight="bold">▶ RIGHT</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Right</text>
+  </g>
+  <polyline points="556,418 480,495 380,525 280,525" fill="none" stroke="#cba6f7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="556" cy="418" r="4.5" fill="#cba6f7" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(30,507)">
+    <title>★ STAR: Space</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#cba6f7" fill-opacity="0.18" stroke="#cba6f7" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#cba6f7" font-size="11" font-weight="bold">★ STAR</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Space</text>
+  </g>
+  <polyline points="694,272 694,120 870,105 920,105" fill="none" stroke="#fab387" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="694" cy="272" r="4.5" fill="#fab387" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(920,87)">
+    <title>R1: Ctrl + Shift + D</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#fab387" fill-opacity="0.18" stroke="#fab387" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#fab387" font-size="11" font-weight="bold">R1</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Ctrl + Shift + D</text>
+  </g>
+  <polyline points="644,272 644,180 850,165 920,165" fill="none" stroke="#f38ba8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="644" cy="272" r="4.5" fill="#f38ba8" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(920,147)">
+    <title>R2: Enter</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#f38ba8" fill-opacity="0.18" stroke="#f38ba8" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#f38ba8" font-size="11" font-weight="bold">R2</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Enter</text>
+  </g>
+  <polyline points="614,334 680,265 840,225 920,225" fill="none" stroke="#89b4fa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="614" cy="334" r="4.5" fill="#89b4fa" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(920,207)">
+    <title>+ START: 2 + Shift</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#89b4fa" fill-opacity="0.18" stroke="#89b4fa" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#89b4fa" font-size="11" font-weight="bold">+ START</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">2 + Shift</text>
+  </g>
+  <polyline points="672,340 740,295 840,285 920,285" fill="none" stroke="#f9e2af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="672" cy="340" r="4.5" fill="#f9e2af" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(920,267)">
+    <title>X: Pageup</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#f9e2af" fill-opacity="0.18" stroke="#f9e2af" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#f9e2af" font-size="11" font-weight="bold">X</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Pageup</text>
+  </g>
+  <polyline points="636,376 710,355 840,345 920,345" fill="none" stroke="#f9e2af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="636" cy="376" r="4.5" fill="#f9e2af" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(920,327)">
+    <title>Y: Shift + Enter — Multi-line prompt</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#f9e2af" fill-opacity="0.18" stroke="#f9e2af" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#f9e2af" font-size="11" font-weight="bold">Y</text>
+    <text x="84" y="17" text-anchor="start" fill="#cdd6f4" font-size="11" font-weight="bold">Shift + Enter</text>
+    <text x="84" y="29" text-anchor="start" fill="#a6adc8" font-size="9.5">Multi-line prompt</text>
+  </g>
+  <polyline points="710,376 770,390 850,405 920,405" fill="none" stroke="#f9e2af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="710" cy="376" r="4.5" fill="#f9e2af" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(920,387)">
+    <title>A: Backspace</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#f9e2af" fill-opacity="0.18" stroke="#f9e2af" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#f9e2af" font-size="11" font-weight="bold">A</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Backspace</text>
+  </g>
+  <polyline points="672,414 740,445 840,465 920,465" fill="none" stroke="#f9e2af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="672" cy="414" r="4.5" fill="#f9e2af" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(920,447)">
+    <title>B: Pagedown</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#f9e2af" fill-opacity="0.18" stroke="#f9e2af" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#f9e2af" font-size="11" font-weight="bold">B</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Pagedown</text>
+  </g>
+  <polyline points="600,418 670,495 820,525 920,525" fill="none" stroke="#cba6f7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+  <circle cx="600" cy="418" r="4.5" fill="#cba6f7" filter="url(#glow)" />
+  <g class="callout-card" transform="translate(920,507)">
+    <title>♥ HOME: Slash</title>
+    <rect width="250" height="36" rx="8" fill="url(#card-grad)" stroke="#313244" stroke-width="1.2" />
+    <rect x="6" y="6" width="68" height="24" rx="5" fill="#cba6f7" fill-opacity="0.18" stroke="#cba6f7" stroke-width="1" />
+    <text x="40" y="22" text-anchor="middle" fill="#cba6f7" font-size="11" font-weight="bold">♥ HOME</text>
+    <text x="84" y="23" text-anchor="start" fill="#cdd6f4" font-size="12" font-weight="bold">Slash</text>
+  </g>
+  <!-- Combos & Simultaneous Chords Footer -->
+  <g transform="translate(140, 568)">
+    <rect width="920" height="56" rx="10" fill="#181825" stroke="#45475a" stroke-width="1.2" />
+    <rect x="12" y="14" width="90" height="28" rx="6" fill="#fab387" fill-opacity="0.18" stroke="#fab387" stroke-width="1" />
+    <text x="57" y="32" text-anchor="middle" fill="#fab387" font-size="11" font-weight="bold">⚡ COMBOS</text>
+    <g class="combo-chip" transform="translate(114, 12)">
+      <title>L2 + R2 ➔ Shift + Tab: Auto-approve file-edits</title>
+      <rect width="369.0" height="32" rx="6" fill="#1e1e2e" stroke="#313244" stroke-width="1" />
+      <text x="12" y="21" fill="#f9e2af" font-size="11" font-weight="bold">L2 + R2</text>
+      <text x="65" y="21" fill="#89b4fa" font-size="11">➔</text>
+      <text x="83" y="21" fill="#cdd6f4" font-size="11" font-weight="bold">Shift + Tab</text>
+      <text x="168" y="21" fill="#6c7086" font-size="10">•</text>
+      <text x="178" y="21" fill="#a6adc8" font-size="10">Auto-approve file…</text>
+    </g>
+    <g class="combo-chip" transform="translate(493.0, 12)">
+      <title>L2 + ▲ UP ➔ Super + F: Fullscreen window</title>
+      <rect width="361.5" height="32" rx="6" fill="#1e1e2e" stroke="#313244" stroke-width="1" />
+      <text x="12" y="21" fill="#f9e2af" font-size="11" font-weight="bold">L2 + ▲ UP</text>
+      <text x="79" y="21" fill="#89b4fa" font-size="11">➔</text>
+      <text x="97" y="21" fill="#cdd6f4" font-size="11" font-weight="bold">Super + F</text>
+      <text x="168" y="21" fill="#6c7086" font-size="10">•</text>
+      <text x="178" y="21" fill="#a6adc8" font-size="10">Fullscreen window</text>
+    </g>
+  </g>
+</svg>
