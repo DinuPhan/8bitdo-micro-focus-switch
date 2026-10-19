@@ -1,3 +1,7 @@
+<p align="right">
+  <b>English</b> • <a href="README.vn.md">Tiếng Việt</a>
+</p>
+
 # 8bitdo-micro-focus-switch
 
 A lightweight Linux tool (with experimental macOS and Windows support) that automatically switches button mappings on your **8BitDo Micro** and **8BitDo Zero 2** depending on which application window is currently active.
