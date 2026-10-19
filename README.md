@@ -12,15 +12,21 @@ The **8BitDo Micro** (16 buttons) and **8BitDo Zero 2** (12 buttons) are feather
 - Reviewing Anki flashcards
 - Smooth article and web browsing
 
-**The catch with the official setup:**
-- **Zero 2**: 8BitDo never created any companion software for the Zero 2. You were forever stuck with fixed factory keys!
-- **Micro**: The official 8BitDo mobile app only lets you store one custom profile on the controller at a time. Switching apps requires unpairing, opening a phone app, re-flashing, and reconnecting.
+**The catch with the standard setup:**
+- **Single static profile**: Official companion tools only configure a single static layout on the controller. They have no awareness of which desktop window or application is currently in focus.
+- **Multitasking friction**: When switching between Anki (flashcards), YouTube (media navigation), a browser, and your terminal or code editor, you're either stuck with conflicting shortcuts or forced to disconnect and reconfigure each time.
+- **Desktop limitations**: Standard setups lack native desktop OS integration like executing arbitrary shell commands, multi-button chords (`L1 + R1 -> Super + K`), or instant sub-millisecond window-focus remapping.
 
 **With `8bitdo-micro-focus-switch`:**
-- **Zero-touch automatic switching**: Your controller rebinds itself as you switch windows on your desktop.
-- **Full Zero 2 Superpowers**: Gives 8BitDo Zero 2 users window-specific profile switching, multi-button chords, shell commands, and D-pad rotation for the first time ever!
-- **Visual Keymap HUD**: Forget which button does what? One command or hotkey pops up a visual diagram showing button mappings with glowing pointers and label badges.
-- **No phone required**: Direct desktop daemon remapping via `uinput` (<1ms latency) plus phone-free BLE hardware flashing for the Micro.
+- **Zero-touch automatic switching**: Your controller dynamically rebinds its keys the instant you change active windows on your computer.
+- **Unified Micro & Zero 2 support**: Full dynamic remapping and profile management for both the **8BitDo Micro** (16 buttons) and **8BitDo Zero 2** (12 buttons).
+- **Visual Keymap HUD**: Forget which button does what in each app? One command or hotkey pops up an interactive visual diagram with glowing pointers and callout labels.
+- **Desktop superpowers**:
+  - Multi-button combos & chording (e.g. `L + R` -> `Super + K`, `Select + Start` -> command palette).
+  - On-the-fly D-pad rotation (0° / 90° / 180° / 270°) for comfortable one-handed vertical holding.
+  - Arbitrary shell commands (`exec: playerctl play-pause`, `exec: notify-send ...`).
+  - Cross-platform support across Linux (`uinput`), macOS (Event Tap), and Windows (Low-Level Hooks).
+  - Phone-free direct BLE hardware flashing for 8BitDo Micro when standalone hardware memory is desired.
 
 ---
 
