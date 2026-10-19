@@ -35,8 +35,8 @@ COLOR_SPECIAL = "#cba6f7"   # Mauve / Purple
 
 BUTTON_METADATA: dict[str, tuple[str, str]] = {
     # (Display label, Color)
-    "L2": ("L2", COLOR_TRIGGERS),
     "L": ("L1", COLOR_BUMPERS),
+    "L2": ("L2", COLOR_TRIGGERS),
     "UP": ("▲ UP", COLOR_DPAD),
     "LEFT": ("◀ LEFT", COLOR_DPAD),
     "SELECT": ("- SELECT", COLOR_CENTER),
@@ -44,8 +44,8 @@ BUTTON_METADATA: dict[str, tuple[str, str]] = {
     "RIGHT": ("▶ RIGHT", COLOR_DPAD),
     "STAR": ("★ STAR", COLOR_SPECIAL),
 
-    "R2": ("R2", COLOR_TRIGGERS),
     "R": ("R1", COLOR_BUMPERS),
+    "R2": ("R2", COLOR_TRIGGERS),
     "START": ("+ START", COLOR_CENTER),
     "X": ("X", COLOR_ACTION),
     "Y": ("Y", COLOR_ACTION),
@@ -56,8 +56,8 @@ BUTTON_METADATA: dict[str, tuple[str, str]] = {
 
 # Leader line waypoints: (button_key, (origin_x, origin_y), (elbow1_x, elbow1_y), (elbow2_x, elbow2_y), (target_x, target_y))
 LEFT_CALLOUTS = (
-    ("L2", (474, 272), (474, 120), (330, 105), (280, 105)),
-    ("L", (524, 272), (524, 180), (350, 165), (280, 165)),
+    ("L", (474, 272), (474, 120), (330, 105), (280, 105)),
+    ("L2", (524, 272), (524, 180), (350, 165), (280, 165)),
     ("UP", (489, 346), (430, 265), (340, 225), (280, 225)),
     ("LEFT", (460, 375), (380, 305), (340, 285), (280, 285)),
     ("SELECT", (542, 334), (480, 335), (380, 345), (280, 345)),
@@ -67,8 +67,8 @@ LEFT_CALLOUTS = (
 )
 
 RIGHT_CALLOUTS = (
-    ("R2", (694, 272), (694, 120), (870, 105), (920, 105)),
-    ("R", (644, 272), (644, 180), (850, 165), (920, 165)),
+    ("R", (694, 272), (694, 120), (870, 105), (920, 105)),
+    ("R2", (644, 272), (644, 180), (850, 165), (920, 165)),
     ("START", (614, 334), (680, 265), (840, 225), (920, 225)),
     ("X", (672, 340), (740, 295), (840, 285), (920, 285)),
     ("Y", (636, 376), (710, 355), (840, 345), (920, 345)),

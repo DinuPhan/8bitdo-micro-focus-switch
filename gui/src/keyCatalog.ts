@@ -10,18 +10,18 @@ export interface ButtonMeta {
 
 export const BUTTON_METADATA: Record<string, ButtonMeta> = {
   // Left Side Buttons
-  L2: {
-    label: "L2",
-    color: "#f38ba8",
+  L: {
+    label: "L1",
+    color: "#fab387",
     side: "left",
     coord: [474, 272],
     elbow1: [474, 120],
     elbow2: [330, 105],
     target: [280, 105],
   },
-  L: {
-    label: "L1",
-    color: "#fab387",
+  L2: {
+    label: "L2",
+    color: "#f38ba8",
     side: "left",
     coord: [524, 272],
     elbow1: [524, 180],
@@ -84,18 +84,18 @@ export const BUTTON_METADATA: Record<string, ButtonMeta> = {
   },
 
   // Right Side Buttons
-  R2: {
-    label: "R2",
-    color: "#f38ba8",
+  R: {
+    label: "R1",
+    color: "#fab387",
     side: "right",
     coord: [694, 272],
     elbow1: [694, 120],
     elbow2: [870, 105],
     target: [920, 105],
   },
-  R: {
-    label: "R1",
-    color: "#fab387",
+  R2: {
+    label: "R2",
+    color: "#f38ba8",
     side: "right",
     coord: [644, 272],
     elbow1: [644, 180],
@@ -175,7 +175,7 @@ export function rotateDpadButton(btn: string, turnDegrees: number): string {
 }
 
 export const CONTROLLER_BUTTON_KEYS = [
-  "L2", "L", "R2", "R",
+  "L", "L2", "R", "R2",
   "UP", "DOWN", "LEFT", "RIGHT",
   "A", "B", "X", "Y",
   "SELECT", "START", "STAR", "HOME"
