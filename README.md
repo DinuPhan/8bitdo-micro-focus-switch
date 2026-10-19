@@ -83,12 +83,23 @@ cd 8bitdo-micro-focus-switch
 uv pip install -e .
 ```
 
-### 2. Pair Controller
+### 2. Connect Your Controller (Bluetooth Keyboard Mode)
 
-- **8BitDo Micro**: Switch the bottom slider to **`K`** (Keyboard mode). Hold the small **Pair** button on the bottom until the LED blinks rapidly, then pair via Bluetooth.
-- **8BitDo Zero 2**: Turn on the controller by holding **`R + START`** (Keyboard mode). Hold the **Select** button for 3 seconds until the blue LED blinks rapidly, then pair via Bluetooth.
+Both controllers must be paired in **Keyboard Mode** so the daemon can intercept and dynamically remap button inputs:
 
-The daemon automatically detects both models dynamically upon connection.
+| Controller | Power On / Mode Selection | Enter Pairing Mode | Device Name in OS | Status LED |
+| :--- | :--- | :--- | :--- | :--- |
+| **8BitDo Micro** | Slide bottom switch to **`K`** | Hold bottom **Pair** button for 3s | `8BitDo Micro gamepad Keyboard` | Blue LED blinks rapidly |
+| **8BitDo Zero 2** | Hold **`R + START`** to power on | Hold **`SELECT`** button for 3s | `8BitDo Zero 2 gamepad` | Blue LED blinks rapidly (5 blinks/cycle when idle) |
+
+#### Quick Pairing Steps:
+1. **Power on in Keyboard mode** as shown in the table above.
+2. **Hold the pair button** for 3 seconds until the blue LED flashes rapidly.
+3. **Select the controller** in your system Bluetooth menu (GNOME, KDE, `blueman`, or `bluetoothctl`).
+4. **Done!** The background daemon automatically detects the controller (`model=8BitDo Micro` or `model=8BitDo Zero 2`) and begins remapping with `<1ms` latency.
+
+> [!TIP]
+> **Subsequent Connections**: After pairing once, simply tap **`START`** (Zero 2) or flick to **`K`** (Micro) to wake the controller. It reconnects to your computer automatically, and the daemon re-attaches instantly with zero manual intervention.
 
 ### 3. Quick Status Check
 
@@ -235,12 +246,16 @@ RIGHT = "Right"
 
 ### Button Names Reference
 
-The 16 physical buttons are named:
-- **Face buttons**: `A`, `B`, `X`, `Y`
-- **Shoulders**: `L` (L1), `R` (R1), `L2`, `R2`
-- **Center**: `SELECT` (`-`), `START` (`+`)
-- **Bottom**: `STAR` (★), `HOME` (♥)
-- **D-pad**: `UP`, `DOWN`, `LEFT`, `RIGHT`
+- **8BitDo Micro (16 buttons)**:
+  - **Face buttons**: `A`, `B`, `X`, `Y`
+  - **Shoulders / Bumpers**: `L` (L1), `R` (R1), `L2`, `R2`
+  - **Center**: `SELECT` (`-`), `START` (`+`)
+  - **Bottom**: `STAR` (★), `HOME` (♥)
+  - **D-pad**: `UP`, `DOWN`, `LEFT`, `RIGHT`
+
+- **8BitDo Zero 2 (12 buttons)**:
+  - Features the same 12 core buttons: `A`, `B`, `X`, `Y`, `L`, `R`, `SELECT`, `START`, and `UP`, `DOWN`, `LEFT`, `RIGHT`.
+  - *(Zero 2 does not have physical L2, R2, STAR, or HOME buttons).*
 
 ### Holding the Controller Vertically (`turn = 90`)
 
