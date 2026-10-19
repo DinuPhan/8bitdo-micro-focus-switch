@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { BUTTON_METADATA, KEY_CATEGORIES } from "./keyCatalog";
+import { BUTTON_METADATA, KEY_CATEGORIES, CONTROLLER_BUTTON_KEYS } from "./keyCatalog";
 import controllerPng from "./assets/micro-controller.png";
 import {
   AppConfigData,
@@ -14,7 +14,9 @@ let appConfig: AppConfigData = {
   profiles: {},
 };
 let activeProfileName = "default";
-let editingTarget: { type: "button" | "combo"; key: string } | null = null;
+let editingTarget: { type: "button"; key: string } | null = null;
+let editingComboKey: string | null = null;
+const selectedComboButtons = new Set<string>();
 let isRecording = false;
 const currentlyPressedKeys = new Set<string>();
 
@@ -31,7 +33,7 @@ const btnSaveAll = document.getElementById("btn-save-all") as HTMLButtonElement;
 const svgCalloutsLayer = document.getElementById("svg-callouts-layer") as unknown as SVGGElement;
 const svgPinsLayer = document.getElementById("svg-pins-layer") as unknown as SVGGElement;
 
-// Modals
+// Modals - Single Button
 const modalBinding = document.getElementById("modal-binding") as HTMLDivElement;
 const modalBindingTitle = document.getElementById("modal-binding-title") as HTMLElement;
 const inputBindingKeys = document.getElementById("input-binding-keys") as HTMLInputElement;
@@ -40,6 +42,22 @@ const inputBindingDesc = document.getElementById("input-binding-desc") as HTMLIn
 const keyRecorderBox = document.getElementById("key-recorder-box") as HTMLDivElement;
 const btnBindingApply = document.getElementById("btn-binding-apply") as HTMLButtonElement;
 const btnBindingClear = document.getElementById("btn-binding-clear") as HTMLButtonElement;
+
+// Modals - Combo & Chords
+const modalCombo = document.getElementById("modal-combo") as HTMLDivElement;
+const modalComboTitle = document.getElementById("modal-combo-title") as HTMLElement;
+const comboTriggerCount = document.getElementById("combo-trigger-count") as HTMLElement;
+const comboButtonsGrid = document.getElementById("combo-buttons-grid") as HTMLDivElement;
+const inputComboTrigger = document.getElementById("input-combo-trigger") as HTMLInputElement;
+const comboKeyRecorderBox = document.getElementById("combo-key-recorder-box") as HTMLDivElement;
+const inputComboKeys = document.getElementById("input-combo-keys") as HTMLInputElement;
+const comboChipsModifiers = document.getElementById("combo-chips-modifiers") as HTMLDivElement;
+const comboChipsCommon = document.getElementById("combo-chips-common") as HTMLDivElement;
+const comboChipsFn = document.getElementById("combo-chips-fn") as HTMLDivElement;
+const inputComboExec = document.getElementById("input-combo-exec") as HTMLInputElement;
+const inputComboDesc = document.getElementById("input-combo-desc") as HTMLInputElement;
+const btnComboDelete = document.getElementById("btn-combo-delete") as HTMLButtonElement;
+const btnComboApply = document.getElementById("btn-combo-apply") as HTMLButtonElement;
 
 // Window Picker Modal
 const modalWindowPicker = document.getElementById("modal-window-picker") as HTMLDivElement;
@@ -77,6 +95,7 @@ const bleOutputBox = document.getElementById("ble-output-box") as HTMLDivElement
 // ----------------------------------------------------------------------------
 async function init() {
   setupTabs();
+  initComboButtonsGrid();
   setupCatalogChips();
   setupKeyRecorder();
   setupModalEvents();
@@ -319,8 +338,80 @@ function renderSvgCallouts() {
 }
 
 // ----------------------------------------------------------------------------
-// Combos List Rendering
+// Combos List Rendering & Controller Buttons Picker
 // ----------------------------------------------------------------------------
+function initComboButtonsGrid() {
+  comboButtonsGrid.innerHTML = "";
+  for (const btn of CONTROLLER_BUTTON_KEYS) {
+    const meta = BUTTON_METADATA[btn];
+    const label = meta?.label || btn;
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "ctrl-btn-chip";
+    chip.dataset.btn = btn;
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      if (selectedComboButtons.has(btn)) {
+        selectedComboButtons.delete(btn);
+      } else {
+        selectedComboButtons.add(btn);
+      }
+      updateComboTriggerFromSelection();
+    });
+    comboButtonsGrid.appendChild(chip);
+  }
+
+  // Preset chips
+  modalCombo.querySelectorAll<HTMLButtonElement>(".preset-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const trigger = btn.dataset.trigger;
+      if (trigger) {
+        setComboTrigger(trigger);
+      }
+    });
+  });
+
+  // Manual typing in trigger input
+  inputComboTrigger.addEventListener("input", () => {
+    syncSelectionFromTrigger(inputComboTrigger.value);
+  });
+}
+
+function setComboTrigger(trigger: string) {
+  inputComboTrigger.value = trigger;
+  syncSelectionFromTrigger(trigger);
+}
+
+function syncSelectionFromTrigger(trigger: string) {
+  selectedComboButtons.clear();
+  const parts = trigger.split("+").map((p) => p.trim().toUpperCase()).filter(Boolean);
+  for (const p of parts) {
+    const normalized = p === "L1" ? "L" : p === "R1" ? "R" : p;
+    selectedComboButtons.add(normalized);
+  }
+  updateComboButtonsUI();
+}
+
+function updateComboTriggerFromSelection() {
+  inputComboTrigger.value = Array.from(selectedComboButtons).join("+");
+  updateComboButtonsUI();
+}
+
+function updateComboButtonsUI() {
+  const count = selectedComboButtons.size;
+  comboTriggerCount.textContent = `${count} selected${count >= 2 ? " (valid combo)" : " (need 2+ buttons)"}`;
+  comboTriggerCount.style.color = count >= 2 ? "var(--accent-green)" : "var(--accent-orange)";
+
+  comboButtonsGrid.querySelectorAll<HTMLButtonElement>(".ctrl-btn-chip").forEach((chip) => {
+    const btn = chip.dataset.btn;
+    if (btn && selectedComboButtons.has(btn)) {
+      chip.classList.add("selected");
+    } else {
+      chip.classList.remove("selected");
+    }
+  });
+}
+
 function renderCombosList() {
   combosContainer.innerHTML = "";
   const profile = appConfig.profiles[activeProfileName];
@@ -331,7 +422,7 @@ function renderCombosList() {
 
   if (comboKeys.length === 0) {
     combosContainer.innerHTML = `
-      <div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">
+      <div style="grid-column: 1 / -1; padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">
         No simultaneous combos defined for profile '${activeProfileName}'. Click <b>+ Add Combo</b> to create one!
       </div>
     `;
@@ -349,22 +440,36 @@ function renderCombosList() {
       .join(" + ");
 
     card.innerHTML = `
-      <div>
-        <div style="font-size: 13px; font-weight: 700; color: var(--accent-orange);">${displayKey}</div>
-        <div style="font-size: 12px; color: var(--text-main); margin-top: 2px;">➔ ${formatActionText(act)}</div>
-        ${act.description ? `<div style="font-size: 11px; color: var(--text-sub); margin-top: 2px;">• ${act.description}</div>` : ""}
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="combo-trigger-badge">${displayKey}</span>
+          <span style="font-size: 11px; color: var(--text-muted); font-family: monospace;">(Trigger)</span>
+        </div>
+        <div style="font-size: 13px; color: var(--text-main); font-weight: 600; display: flex; align-items: center; gap: 6px;">
+          <span style="color: var(--accent-blue);">➔</span>
+          <span class="combo-action-badge">${formatActionText(act)}</span>
+        </div>
+        ${act.description ? `<div style="font-size: 11px; color: var(--text-muted);">• ${act.description}</div>` : ""}
       </div>
-      <button class="danger btn-del-combo" style="padding: 4px 8px; font-size: 11px;">✕</button>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <button class="btn-edit-combo" title="Configure binding & key capture">⌨️ Record / Edit</button>
+        <button class="danger btn-del-combo" title="Delete Combo" style="padding: 4px 8px; font-size: 11px;">✕</button>
+      </div>
     `;
 
     card.querySelector(".btn-del-combo")?.addEventListener("click", (e) => {
       e.stopPropagation();
       delete profile.combos[comboKey];
       renderCombosList();
-      showToast(`Removed combo ${comboKey}`);
+      showToast(`Removed combo [${comboKey}]`);
     });
 
-    card.addEventListener("click", () => openBindingModal("combo", comboKey));
+    card.querySelector(".btn-edit-combo")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openComboModal(comboKey);
+    });
+
+    card.addEventListener("click", () => openComboModal(comboKey));
     combosContainer.appendChild(card);
   }
 }
@@ -372,14 +477,12 @@ function renderCombosList() {
 // ----------------------------------------------------------------------------
 // Modals & Key Recording
 // ----------------------------------------------------------------------------
-function openBindingModal(type: "button" | "combo", key: string) {
+function openBindingModal(type: "button", key: string) {
   editingTarget = { type, key };
   const profile = appConfig.profiles[activeProfileName];
-  const action: ActionData | undefined =
-    type === "button" ? profile?.buttons[key] : profile?.combos[key];
+  const action: ActionData | undefined = profile?.buttons[key];
 
-  const titlePrefix = type === "button" ? `Button [${key}]` : `Combo [${key}]`;
-  modalBindingTitle.textContent = `Configure ${titlePrefix} in '${activeProfileName}'`;
+  modalBindingTitle.textContent = `Configure Button [${key}] in '${activeProfileName}'`;
 
   inputBindingKeys.value = action ? action.keys.join("+") : "";
   inputBindingExec.value = action?.execCmd || "";
@@ -389,12 +492,68 @@ function openBindingModal(type: "button" | "combo", key: string) {
   inputBindingKeys.focus();
 }
 
+function openComboModal(comboKey?: string) {
+  const profile = appConfig.profiles[activeProfileName];
+
+  if (comboKey) {
+    editingComboKey = comboKey;
+    modalComboTitle.textContent = `Edit Combo [${comboKey}] in '${activeProfileName}'`;
+    setComboTrigger(comboKey);
+
+    const act = profile?.combos[comboKey];
+    inputComboKeys.value = act?.keys ? act.keys.join("+") : "";
+    inputComboExec.value = act?.execCmd || "";
+    inputComboDesc.value = act?.description || "";
+    btnComboDelete.style.display = "inline-block";
+  } else {
+    editingComboKey = null;
+    modalComboTitle.textContent = `Add New Combo in '${activeProfileName}'`;
+    setComboTrigger("");
+    inputComboKeys.value = "";
+    inputComboExec.value = "";
+    inputComboDesc.value = "";
+    btnComboDelete.style.display = "none";
+  }
+
+  modalCombo.classList.add("open");
+  inputComboKeys.focus();
+}
+
+let activeRecorderBox: HTMLElement | null = null;
+let activeRecorderInput: HTMLInputElement | null = null;
+
+function startRecording(box: HTMLElement, input: HTMLInputElement) {
+  isRecording = true;
+  activeRecorderBox = box;
+  activeRecorderInput = input;
+  currentlyPressedKeys.clear();
+  box.classList.add("recording");
+  box.style.borderColor = "var(--accent-orange)";
+  const span = box.querySelector("span");
+  if (span) span.textContent = "🔴 Listening... Press keys on your keyboard";
+}
+
+function stopRecording(captured: boolean) {
+  if (!activeRecorderBox) return;
+  isRecording = false;
+  activeRecorderBox.classList.remove("recording");
+  activeRecorderBox.style.borderColor = "var(--border-focus)";
+  const span = activeRecorderBox.querySelector("span");
+  if (span) {
+    span.textContent = captured
+      ? "✓ Captured! Click again to re-record"
+      : "⌨️ Click here & press keys on your keyboard";
+  }
+  activeRecorderBox = null;
+  activeRecorderInput = null;
+  currentlyPressedKeys.clear();
+}
+
 function closeAllModals() {
   document.querySelectorAll(".modal-backdrop").forEach((m) => m.classList.remove("open"));
-  isRecording = false;
-  currentlyPressedKeys.clear();
-  keyRecorderBox.style.borderColor = "var(--border-focus)";
-  keyRecorderBox.querySelector("span")!.textContent = "⌨️ Click here & press keys on your keyboard";
+  if (activeRecorderBox) {
+    stopRecording(false);
+  }
 }
 
 function setupModalEvents() {
@@ -408,7 +567,7 @@ function setupModalEvents() {
     });
   });
 
-  // Apply button binding
+  // Apply single button binding
   btnBindingApply.addEventListener("click", () => {
     if (!editingTarget) return;
     const profile = appConfig.profiles[activeProfileName];
@@ -425,61 +584,92 @@ function setupModalEvents() {
       description: desc || undefined,
     };
 
-    if (editingTarget.type === "button") {
-      profile.buttons[editingTarget.key] = newAction;
-      renderSvgCallouts();
-    } else {
-      profile.combos[editingTarget.key] = newAction;
-      renderCombosList();
-    }
+    profile.buttons[editingTarget.key] = newAction;
+    renderSvgCallouts();
 
     closeAllModals();
     showToast(`✓ Updated binding for ${editingTarget.key}`);
   });
 
-  // Clear button binding
+  // Clear single button binding
   btnBindingClear.addEventListener("click", () => {
     if (!editingTarget) return;
     const profile = appConfig.profiles[activeProfileName];
     if (!profile) return;
 
-    if (editingTarget.type === "button") {
-      delete profile.buttons[editingTarget.key];
-      renderSvgCallouts();
-    } else {
-      delete profile.combos[editingTarget.key];
-      renderCombosList();
-    }
+    delete profile.buttons[editingTarget.key];
+    renderSvgCallouts();
 
     closeAllModals();
     showToast(`Cleared ${editingTarget.key}`);
   });
 
-  // Add Combo
+  // Apply Combo
+  btnComboApply.addEventListener("click", () => {
+    const profile = appConfig.profiles[activeProfileName];
+    if (!profile) return;
+
+    const trigger = inputComboTrigger.value.trim().toUpperCase();
+    if (!trigger) {
+      showToast("⚠️ Please select at least 2 trigger buttons");
+      return;
+    }
+
+    const rawKeys = inputComboKeys.value.trim();
+    const execCmd = inputComboExec.value.trim();
+    const desc = inputComboDesc.value.trim();
+
+    if (!rawKeys && !execCmd) {
+      showToast("⚠️ Please record a key chord or enter a shell command");
+      return;
+    }
+
+    const keysArray = rawKeys ? rawKeys.split("+").map((k) => k.trim().toUpperCase()) : [];
+    const newAction: ActionData = {
+      keys: keysArray,
+      execCmd: execCmd || undefined,
+      description: desc || undefined,
+    };
+
+    if (editingComboKey && editingComboKey !== trigger) {
+      delete profile.combos[editingComboKey];
+    }
+
+    profile.combos[trigger] = newAction;
+    renderCombosList();
+    closeAllModals();
+    showToast(`✓ Saved combo [${trigger}]`);
+  });
+
+  // Delete Combo from Modal
+  btnComboDelete.addEventListener("click", () => {
+    const profile = appConfig.profiles[activeProfileName];
+    if (!profile) return;
+
+    if (editingComboKey) {
+      delete profile.combos[editingComboKey];
+      renderCombosList();
+      closeAllModals();
+      showToast(`Removed combo [${editingComboKey}]`);
+    }
+  });
+
+  // Add Combo Button
   btnAddCombo.addEventListener("click", () => {
-    const comboKey = prompt("Enter button combination (e.g. L+R, L2+UP, SELECT+START):");
-    if (!comboKey) return;
-    const norm = comboKey.trim().toUpperCase();
-    openBindingModal("combo", norm);
+    openComboModal();
   });
 }
 
 function setupKeyRecorder() {
-  keyRecorderBox.addEventListener("click", () => {
-    isRecording = true;
-    currentlyPressedKeys.clear();
-    keyRecorderBox.style.borderColor = "var(--accent-orange)";
-    keyRecorderBox.querySelector("span")!.textContent = "🔴 Listening... Press keys on your keyboard";
-  });
+  keyRecorderBox.addEventListener("click", () => startRecording(keyRecorderBox, inputBindingKeys));
+  comboKeyRecorderBox.addEventListener("click", () => startRecording(comboKeyRecorderBox, inputComboKeys));
 
   window.addEventListener("keydown", (e) => {
-    if (!isRecording) return;
+    if (!isRecording || !activeRecorderInput) return;
     e.preventDefault();
 
     if (e.key === "Escape") {
-      isRecording = false;
-      keyRecorderBox.style.borderColor = "var(--border-focus)";
-      keyRecorderBox.querySelector("span")!.textContent = "⌨️ Click here & press keys on your keyboard";
+      stopRecording(false);
       return;
     }
 
@@ -488,16 +678,14 @@ function setupKeyRecorder() {
 
     // Build combination string
     const chord = Array.from(currentlyPressedKeys).join("+");
-    inputBindingKeys.value = chord;
+    activeRecorderInput.value = chord;
   });
 
   window.addEventListener("keyup", (e) => {
-    if (!isRecording) return;
+    if (!isRecording || !activeRecorderInput) return;
     currentlyPressedKeys.delete(translateDomKey(e.key));
     if (currentlyPressedKeys.size === 0) {
-      isRecording = false;
-      keyRecorderBox.style.borderColor = "var(--border-focus)";
-      keyRecorderBox.querySelector("span")!.textContent = "✓ Captured! Click again to re-record";
+      stopRecording(true);
     }
   });
 }
@@ -507,7 +695,10 @@ function translateDomKey(key: string): string {
     Control: "LEFTCTRL",
     Shift: "LEFTSHIFT",
     Alt: "LEFTALT",
+    AltGraph: "RIGHTALT",
     Meta: "LEFTMETA",
+    Super: "LEFTMETA",
+    OS: "LEFTMETA",
     ArrowUp: "UP",
     ArrowDown: "DOWN",
     ArrowLeft: "LEFT",
@@ -518,6 +709,23 @@ function translateDomKey(key: string): string {
     Tab: "TAB",
     Delete: "DELETE",
     Escape: "ESC",
+    CapsLock: "CAPSLOCK",
+    PageUp: "PAGEUP",
+    PageDown: "PAGEDOWN",
+    Home: "HOME",
+    End: "END",
+    Insert: "INSERT",
+    ",": "COMMA",
+    ".": "DOT",
+    "/": "SLASH",
+    ";": "SEMICOLON",
+    "'": "APOSTROPHE",
+    "[": "LEFTBRACE",
+    "]": "RIGHTBRACE",
+    "\\": "BACKSLASH",
+    "-": "MINUS",
+    "=": "EQUAL",
+    "`": "GRAVE",
   };
   return map[key] || key.toUpperCase();
 }
@@ -527,24 +735,32 @@ function setupCatalogChips() {
   const chipsCommon = document.getElementById("chips-common");
   const chipsFn = document.getElementById("chips-fn");
 
-  function addChips(container: HTMLElement | null, keys: string[]) {
+  function addChips(container: HTMLElement | null, inputEl: HTMLInputElement, keys: string[]) {
     if (!container) return;
+    container.innerHTML = "";
     for (const k of keys) {
       const chip = document.createElement("span");
       chip.className = "key-chip";
       chip.textContent = k;
       chip.addEventListener("click", () => {
-        const cur = inputBindingKeys.value.trim();
-        inputBindingKeys.value = cur ? `${cur}+${k}` : k;
+        const cur = inputEl.value.trim();
+        inputEl.value = cur ? `${cur}+${k}` : k;
       });
       container.appendChild(chip);
     }
   }
 
-  addChips(chipsMod, KEY_CATEGORIES["Modifiers"]);
-  addChips(chipsCommon, [...KEY_CATEGORIES["Common"], ...KEY_CATEGORIES["Navigation"]]);
-  addChips(chipsFn, KEY_CATEGORIES["Function"]);
+  // Populate Single Button Modal
+  addChips(chipsMod, inputBindingKeys, KEY_CATEGORIES["Modifiers"]);
+  addChips(chipsCommon, inputBindingKeys, [...KEY_CATEGORIES["Common"], ...KEY_CATEGORIES["Navigation"]]);
+  addChips(chipsFn, inputBindingKeys, KEY_CATEGORIES["Function"]);
+
+  // Populate Combo Modal
+  addChips(comboChipsModifiers, inputComboKeys, KEY_CATEGORIES["Modifiers"]);
+  addChips(comboChipsCommon, inputComboKeys, [...KEY_CATEGORIES["Common"], ...KEY_CATEGORIES["Navigation"]]);
+  addChips(comboChipsFn, inputComboKeys, KEY_CATEGORIES["Function"]);
 }
+
 
 // ----------------------------------------------------------------------------
 // Window Picker Modal

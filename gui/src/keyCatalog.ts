@@ -158,6 +158,17 @@ export const BUTTON_METADATA: Record<string, ButtonMeta> = {
   },
 };
 
+// Aliases for L1/R1
+BUTTON_METADATA["L1"] = BUTTON_METADATA["L"];
+BUTTON_METADATA["R1"] = BUTTON_METADATA["R"];
+
+export const CONTROLLER_BUTTON_KEYS = [
+  "L2", "L", "R2", "R",
+  "UP", "DOWN", "LEFT", "RIGHT",
+  "A", "B", "X", "Y",
+  "SELECT", "START", "STAR", "HOME"
+] as const;
+
 export const KEY_CATEGORIES: Record<string, string[]> = {
   Modifiers: [
     "LEFTCTRL",

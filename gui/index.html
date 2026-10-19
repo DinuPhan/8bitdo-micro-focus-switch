@@ -228,6 +228,97 @@
       </div>
     </div>
 
+    <!-- Combo & Chord Configuration Modal -->
+    <div id="modal-combo" class="modal-backdrop">
+      <div class="modal-window" style="max-width: 640px;">
+        <div class="modal-header">
+          <h3 id="modal-combo-title" class="modal-title">Configure Combo</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Step 1: Controller Trigger Selector -->
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <label class="control-label" style="font-weight: 700; color: var(--accent-orange);">
+                🎮 Controller Trigger Buttons (Hold Together):
+              </label>
+              <span id="combo-trigger-count" style="font-size: 11px; color: var(--text-muted); font-family: monospace;">0 selected</span>
+            </div>
+
+            <!-- Quick Presets -->
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+              <span style="font-size: 11px; color: var(--text-muted);">Presets:</span>
+              <button type="button" class="preset-chip" data-trigger="L+R">L1 + R1</button>
+              <button type="button" class="preset-chip" data-trigger="L2+R2">L2 + R2</button>
+              <button type="button" class="preset-chip" data-trigger="SELECT+START">SELECT + START</button>
+              <button type="button" class="preset-chip" data-trigger="L2+UP">L2 + UP</button>
+              <button type="button" class="preset-chip" data-trigger="L2+DOWN">L2 + DOWN</button>
+              <button type="button" class="preset-chip" data-trigger="L2+LEFT">L2 + LEFT</button>
+              <button type="button" class="preset-chip" data-trigger="L2+RIGHT">L2 + RIGHT</button>
+            </div>
+
+            <!-- Interactive Controller Buttons Grid -->
+            <div id="combo-buttons-grid" class="controller-buttons-picker"></div>
+
+            <!-- Manual/Current Trigger input -->
+            <input type="text" id="input-combo-trigger" placeholder="e.g. L2+UP or L+R" style="width: 100%; font-family: monospace; font-weight: 600;" />
+          </div>
+
+          <div style="height: 1px; background-color: var(--border); margin: 4px 0;"></div>
+
+          <!-- Step 2: Target Key Capture & Binding Box -->
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <label class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+              ⚡ Target Key Binding / Chord:
+            </label>
+
+            <!-- Physical Keyboard Capture Box -->
+            <div id="combo-key-recorder-box" class="key-recorder-box" style="width: 100%; background-color: var(--bg-overlay); border: 2px dashed var(--border-focus); border-radius: 8px; padding: 16px; text-align: center; cursor: pointer;">
+              <span style="font-size: 14px; font-weight: 700; color: var(--accent-blue);">⌨️ Click here & press keys on your keyboard</span>
+              <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Supports chords (e.g. Ctrl + Shift + D, Super + F) and single keys (ESC cancels)</p>
+            </div>
+
+            <!-- Direct Key input -->
+            <input type="text" id="input-combo-keys" placeholder="e.g. LEFTCTRL+LEFTSHIFT+D or Super+F" style="width: 100%; font-family: monospace;" />
+          </div>
+
+          <!-- Quick Key Catalog -->
+          <div>
+            <div class="key-category-title">Quick Modifiers</div>
+            <div class="key-chips-row" id="combo-chips-modifiers"></div>
+          </div>
+          <div>
+            <div class="key-category-title">Common & Navigation</div>
+            <div class="key-chips-row" id="combo-chips-common"></div>
+          </div>
+          <div>
+            <div class="key-category-title">Function Keys (F1..F20)</div>
+            <div class="key-chips-row" id="combo-chips-fn"></div>
+          </div>
+
+          <div style="height: 1px; background-color: var(--border); margin: 4px 0;"></div>
+
+          <!-- Shell Command (Optional) -->
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Shell Command (Optional):</label>
+            <input type="text" id="input-combo-exec" placeholder="e.g. hyprctl dispatch fullscreen 1 or playerctl play-pause" style="width: 100%;" />
+          </div>
+
+          <!-- Description / Inline Comment -->
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Inline Tooltip / Description:</label>
+            <input type="text" id="input-combo-desc" placeholder="e.g. Fullscreen Window / Toggle Floating Terminal" style="width: 100%;" />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-combo-delete" class="danger" style="display: none;">Delete Combo</button>
+          <button class="modal-cancel-btn">Cancel</button>
+          <button id="btn-combo-apply" class="primary">Save Combo</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Window Picker Modal -->
     <div id="modal-window-picker" class="modal-backdrop">
       <div class="modal-window">

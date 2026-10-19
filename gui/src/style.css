@@ -298,6 +298,110 @@ svg#mapper-svg {
   background-color: var(--bg-card);
 }
 
+.combo-trigger-badge {
+  display: inline-block;
+  background-color: rgba(250, 179, 135, 0.15);
+  border: 1px solid rgba(250, 179, 135, 0.4);
+  color: var(--accent-orange);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.combo-action-badge {
+  display: inline-block;
+  background-color: rgba(137, 180, 250, 0.12);
+  border: 1px solid rgba(137, 180, 250, 0.3);
+  color: var(--accent-blue);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.btn-edit-combo {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-main);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.12s ease;
+}
+
+.btn-edit-combo:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  background-color: rgba(137, 180, 250, 0.1);
+}
+
+.controller-buttons-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+
+.ctrl-btn-chip {
+  background-color: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.ctrl-btn-chip:hover {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.ctrl-btn-chip.selected {
+  background-color: rgba(250, 179, 135, 0.22);
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(250, 179, 135, 0.35);
+}
+
+.preset-chip {
+  background-color: rgba(137, 180, 250, 0.12);
+  border: 1px solid rgba(137, 180, 250, 0.3);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.preset-chip:hover {
+  background-color: var(--accent-blue);
+  color: #11111b;
+  border-color: var(--accent-blue);
+}
+
+.key-recorder-box {
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.key-recorder-box.recording {
+  border-color: var(--accent-orange) !important;
+  background-color: rgba(250, 179, 135, 0.08) !important;
+  box-shadow: 0 0 12px rgba(250, 179, 135, 0.25) !important;
+}
+
+
 /* Modal Backdrop & Window */
 .modal-backdrop {
   position: fixed;
