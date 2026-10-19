@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { BUTTON_METADATA, KEY_CATEGORIES, CONTROLLER_BUTTON_KEYS } from "./keyCatalog";
+import {
+  BUTTON_METADATA,
+  KEY_CATEGORIES,
+  CONTROLLER_BUTTON_KEYS,
+  getButtonMeta,
+  rotateDpadButton,
+} from "./keyCatalog";
 import controllerPng from "./assets/micro-controller.png";
 import {
   AppConfigData,
@@ -219,11 +225,27 @@ function renderSvgCallouts() {
   if (!profile) return;
 
   const globalProfile = appConfig.profiles["global"];
+  const turn = profile.turn || 0;
 
-  for (const [btnKey, meta] of Object.entries(BUTTON_METADATA)) {
+  for (const btnKey of CONTROLLER_BUTTON_KEYS) {
+    const meta = BUTTON_METADATA[btnKey];
+    if (!meta) continue;
+
+    // Resolve logical key if D-Pad was rotated by profile.turn
+    const logicalKey = rotateDpadButton(btnKey, turn);
+
     // Resolve button action (profile action > global action)
-    const action = profile.buttons[btnKey] || globalProfile?.buttons[btnKey];
-    const isInherited = !profile.buttons[btnKey] && !!globalProfile?.buttons[btnKey];
+    const action = profile.buttons[logicalKey] || globalProfile?.buttons[logicalKey];
+    const isInherited = !profile.buttons[logicalKey] && !!globalProfile?.buttons[logicalKey];
+
+    // Format action and description
+    const actionStr = formatActionText(action);
+    const hasDesc = !!(action && action.description);
+    const descText = action?.description?.trim() || "";
+
+    const fullTooltip = hasDesc
+      ? `${meta.label}${logicalKey !== btnKey ? ` (➔ ${logicalKey})` : ""}: ${actionStr} — ${descText}${isInherited ? " [Inherited from global]" : ""}`
+      : `${meta.label}${logicalKey !== btnKey ? ` (➔ ${logicalKey})` : ""}: ${actionStr}${isInherited ? " [Inherited from global]" : ""}`;
 
     // 1. Draw glowing pin on controller image
     const [px, py] = meta.coord;
@@ -233,9 +255,14 @@ function renderSvgCallouts() {
     pin.setAttribute("r", "5");
     pin.setAttribute("fill", meta.color);
     pin.setAttribute("filter", "url(#glow)");
+
+    const pinTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    pinTitle.textContent = fullTooltip;
+    pin.appendChild(pinTitle);
+
     pin.addEventListener("click", (e) => {
       e.stopPropagation();
-      openBindingModal("button", btnKey);
+      openBindingModal("button", logicalKey);
     });
     svgPinsLayer.appendChild(pin);
 
@@ -262,6 +289,11 @@ function renderSvgCallouts() {
     const bx = meta.side === "left" ? tx - 250 : tx;
     const by = ty - 18;
     cardGroup.setAttribute("transform", `translate(${bx}, ${by})`);
+
+    // SVG Title tooltip for card hover
+    const cardTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    cardTitle.textContent = fullTooltip;
+    cardGroup.appendChild(cardTitle);
 
     // Card background
     const cardBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -297,11 +329,8 @@ function renderSvgCallouts() {
     badgeText.textContent = meta.label;
     cardGroup.appendChild(badgeText);
 
-    // Action text & description
-    const actionStr = formatActionText(action);
-    const hasDesc = !!(action && action.description);
-
-    if (hasDesc && action?.description) {
+    if (hasDesc && descText) {
+      // Line 1: Action (e.g. "Space" or "Ctrl + Shift + D")
       const txtMain = document.createElementNS("http://www.w3.org/2000/svg", "text");
       txtMain.setAttribute("x", "84");
       txtMain.setAttribute("y", "17");
@@ -311,18 +340,21 @@ function renderSvgCallouts() {
       txtMain.textContent = truncate(actionStr, 20);
       cardGroup.appendChild(txtMain);
 
+      // Line 2: Inline description / comment (e.g. "Start, Stop video")
       const txtDesc = document.createElementNS("http://www.w3.org/2000/svg", "text");
       txtDesc.setAttribute("x", "84");
       txtDesc.setAttribute("y", "29");
-      txtDesc.setAttribute("fill", "#6c7086");
-      txtDesc.setAttribute("font-size", "9.5");
-      txtDesc.textContent = truncate(action.description, 24);
+      txtDesc.setAttribute("fill", "#a6adc8");
+      txtDesc.setAttribute("font-size", "10");
+      txtDesc.setAttribute("font-weight", "500");
+      txtDesc.textContent = truncate(descText, 25);
       cardGroup.appendChild(txtDesc);
     } else {
+      // Single centered line: Action
       const txtMain = document.createElementNS("http://www.w3.org/2000/svg", "text");
       txtMain.setAttribute("x", "84");
       txtMain.setAttribute("y", "23");
-      txtMain.setAttribute("fill", isInherited ? "#a6adc8" : "#cdd6f4");
+      txtMain.setAttribute("fill", isInherited ? "#a6adc8" : (actionStr === "None" ? "#6c7086" : "#cdd6f4"));
       txtMain.setAttribute("font-size", "12");
       txtMain.setAttribute("font-weight", "bold");
       txtMain.textContent = truncate(actionStr, 22);
@@ -331,7 +363,7 @@ function renderSvgCallouts() {
 
     cardGroup.addEventListener("click", (e) => {
       e.stopPropagation();
-      openBindingModal("button", btnKey);
+      openBindingModal("button", logicalKey);
     });
     svgCalloutsLayer.appendChild(cardGroup);
   }
@@ -480,9 +512,12 @@ function renderCombosList() {
 function openBindingModal(type: "button", key: string) {
   editingTarget = { type, key };
   const profile = appConfig.profiles[activeProfileName];
-  const action: ActionData | undefined = profile?.buttons[key];
+  const globalProfile = appConfig.profiles["global"];
+  const action: ActionData | undefined = profile?.buttons[key] || globalProfile?.buttons[key];
 
-  modalBindingTitle.textContent = `Configure Button [${key}] in '${activeProfileName}'`;
+  const meta = getButtonMeta(key);
+  const label = meta?.label || key;
+  modalBindingTitle.textContent = `Configure Button ${label} [${key}] in '${activeProfileName}'`;
 
   inputBindingKeys.value = action ? action.keys.join("+") : "";
   inputBindingExec.value = action?.execCmd || "";
@@ -899,6 +934,7 @@ turnSelect.addEventListener("change", () => {
   const profile = appConfig.profiles[activeProfileName];
   if (profile) {
     profile.turn = Number(turnSelect.value) || 0;
+    renderSvgCallouts();
   }
 });
 
@@ -967,11 +1003,46 @@ function setupTabs() {
   });
 }
 
+function prettyKeyName(k: string): string {
+  const clean = k.replace(/^KEY_/, "").toUpperCase();
+  const map: Record<string, string> = {
+    LEFTCTRL: "Ctrl",
+    RIGHTCTRL: "RCtrl",
+    LEFTSHIFT: "Shift",
+    RIGHTSHIFT: "RShift",
+    LEFTALT: "Alt",
+    RIGHTALT: "RAlt",
+    LEFTMETA: "Super",
+    RIGHTMETA: "RSuper",
+    SUPER: "Super",
+    SPACE: "Space",
+    ENTER: "Enter",
+    BACKSPACE: "Backspace",
+    TAB: "Tab",
+    ESC: "Esc",
+    ESCAPE: "Esc",
+    DELETE: "Del",
+    PAGEUP: "PgUp",
+    PAGEDOWN: "PgDn",
+    HOME: "Home",
+    END: "End",
+    INSERT: "Ins",
+    CAPSLOCK: "CapsLock",
+    KPASTERISK: "Num *",
+    KPMINUS: "Num -",
+    KPPLUS: "Num +",
+    KPENTER: "Num Enter",
+    KPSLASH: "Num /",
+    KPDOT: "Num .",
+  };
+  return map[clean] || (clean.length === 1 ? clean : clean.charAt(0) + clean.slice(1).toLowerCase());
+}
+
 function formatActionText(action?: ActionData): string {
   if (!action) return "None";
   if (action.execCmd) return `⚡ ${action.execCmd}`;
   if (!action.keys || action.keys.length === 0) return "None";
-  return action.keys.join(" + ");
+  return action.keys.map(prettyKeyName).join(" + ");
 }
 
 function truncate(s: string, maxLen: number): string {

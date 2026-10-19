@@ -158,9 +158,21 @@ export const BUTTON_METADATA: Record<string, ButtonMeta> = {
   },
 };
 
-// Aliases for L1/R1
-BUTTON_METADATA["L1"] = BUTTON_METADATA["L"];
-BUTTON_METADATA["R1"] = BUTTON_METADATA["R"];
+export function getButtonMeta(btnKey: string): ButtonMeta | undefined {
+  if (btnKey === "L1") return BUTTON_METADATA["L"];
+  if (btnKey === "R1") return BUTTON_METADATA["R"];
+  return BUTTON_METADATA[btnKey];
+}
+
+const DPAD_RING = ["UP", "RIGHT", "DOWN", "LEFT"] as const;
+
+export function rotateDpadButton(btn: string, turnDegrees: number): string {
+  const norm = btn.toUpperCase();
+  const idx = DPAD_RING.indexOf(norm as any);
+  if (idx === -1) return norm;
+  const steps = Math.floor((((turnDegrees % 360) + 360) % 360) / 90);
+  return DPAD_RING[(idx + steps) % 4];
+}
 
 export const CONTROLLER_BUTTON_KEYS = [
   "L2", "L", "R2", "R",
