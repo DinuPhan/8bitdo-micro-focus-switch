@@ -1,0 +1,43 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/v2/tooling/cli/schema.json",
+  "productName": "8BitDo Micro Focus Switch",
+  "version": "0.1.0",
+  "identifier": "com.dinu.eightbitdo-micro-focus-switch",
+  "build": {
+    "beforeDevCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "8BitDo Micro — Focus Switch",
+        "width": 1260,
+        "height": 840,
+        "minWidth": 960,
+        "minHeight": 680,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
+  }
+}

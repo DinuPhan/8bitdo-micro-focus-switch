@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+# GUI and Tauri artifacts
+gui/node_modules/
+gui/dist/
+gui/src-tauri/target/
+gui/src-tauri/gen/
+

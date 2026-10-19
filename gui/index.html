@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>8BitDo Micro — Focus Switch</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <!-- App Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <span class="brand-title">8BitDo Micro</span>
+        <span class="brand-badge">Focus Switch</span>
+      </div>
+
+      <div class="controls-section">
+        <!-- Profile Dropdown -->
+        <div class="control-group">
+          <label class="control-label" for="profile-select">Profile:</label>
+          <select id="profile-select"></select>
+          <button id="btn-new-profile" title="Create a new profile">+ New</button>
+          <button id="btn-delete-profile" class="danger" title="Delete current profile">Delete</button>
+        </div>
+
+        <!-- D-Pad Turn -->
+        <div class="control-group">
+          <label class="control-label" for="turn-select">D-Pad:</label>
+          <select id="turn-select">
+            <option value="0">0° (Horizontal)</option>
+            <option value="90">90° CW (Vertical)</option>
+            <option value="180">180° (Inverted)</option>
+            <option value="270">270° CW</option>
+          </select>
+        </div>
+
+        <!-- Window Matcher -->
+        <button id="btn-pick-window" title="Select from currently active windows">
+          🪟 Match Window
+        </button>
+
+        <!-- Daemon Status & Controls -->
+        <div class="control-group">
+          <button id="btn-daemon-status" class="success" title="Click to restart daemon">
+            🟢 Daemon Running
+          </button>
+        </div>
+
+        <!-- Save Button -->
+        <button id="btn-save-all" class="primary">
+          💾 Save Changes
+        </button>
+      </div>
+    </header>
+
+    <!-- Tab Bar -->
+    <nav class="tab-bar">
+      <button class="tab-btn active" data-tab="tab-mapper">🎮 Visual Mapper</button>
+      <button class="tab-btn" data-tab="tab-combos">⚡ Combos & Chords</button>
+      <button class="tab-btn" data-tab="tab-ble">📡 BLE Hardware Flashing</button>
+      <button class="tab-btn" data-tab="tab-toml">📝 Raw TOML</button>
+    </nav>
+
+    <!-- App Body / Tabs -->
+    <main class="app-body">
+      <!-- 1. Visual Mapper Tab -->
+      <section id="tab-mapper" class="tab-pane active">
+        <div class="canvas-wrapper">
+          <svg
+            id="mapper-svg"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 1200 650"
+            width="1200"
+            height="650"
+          >
+            <!-- Background & Definitions -->
+            <rect width="1200" height="650" fill="#11111b" rx="16" />
+            <defs>
+              <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3.5" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
+              <linearGradient id="card-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#1e1e2e" />
+                <stop offset="100%" stop-color="#181825" />
+              </linearGradient>
+            </defs>
+
+            <!-- Controller Image -->
+            <image
+              id="svg-controller-img"
+              href="./src/assets/micro-controller.png"
+              x="334"
+              y="220"
+              width="532"
+              height="329"
+            />
+
+            <!-- Dynamic Leader Lines & Cards -->
+            <g id="svg-callouts-layer"></g>
+
+            <!-- Dynamic Pin Circles on Controller -->
+            <g id="svg-pins-layer"></g>
+          </svg>
+        </div>
+      </section>
+
+      <!-- 2. Combos Tab -->
+      <section id="tab-combos" class="tab-pane">
+        <div class="combos-panel">
+          <div class="combos-header">
+            <div>
+              <h3>Simultaneous Multi-Button Combos</h3>
+              <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+                Press 2 or more buttons together (e.g. L1 + R1, Select + Start) to trigger instant chords or shell commands.
+              </p>
+            </div>
+            <button id="btn-add-combo" class="primary">+ Add Combo</button>
+          </div>
+          <div id="combos-list-container" class="combos-grid"></div>
+        </div>
+      </section>
+
+      <!-- 3. BLE Hardware Tab -->
+      <section id="tab-ble" class="tab-pane">
+        <div class="combos-panel" style="max-width: 700px; margin: 20px auto;">
+          <h3 style="margin-bottom: 8px;">Direct BLE GATT Hardware Flashing ('80EL')</h3>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">
+            Flash a profile directly into the 8BitDo Micro's physical hardware memory. The controller will remember this mapping on any computer, iPad, or Android phone without running software.
+          </p>
+
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+              <label class="control-label">Select Hardware Preset or Config Profile:</label>
+              <select id="ble-preset-select" style="width: 100%; padding: 8px 12px;">
+                <option value="sentinel">sentinel (F13..F20 + Numpad for cross-platform host mode)</option>
+                <option value="factory">factory (Default keyboard mode: c..t keys)</option>
+                <option value="anki">anki (Official Anki preset: 1, 2, 3, 4, Space, etc.)</option>
+                <option value="supermemo">supermemo (SuperMemo navigation preset)</option>
+              </select>
+            </div>
+
+            <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+              <label class="control-label">Optional D-Pad Rotation Override:</label>
+              <select id="ble-turn-select" style="width: 100%; padding: 8px 12px;">
+                <option value="">Keep Profile Default</option>
+                <option value="0">0° (Normal)</option>
+                <option value="90">90° CW (One-Handed)</option>
+                <option value="180">180° (Inverted)</option>
+                <option value="270">270° CW</option>
+              </select>
+            </div>
+
+            <button id="btn-flash-ble" class="primary" style="padding: 10px 16px; margin-top: 10px;">
+              ⚡ Flash to 8BitDo Micro Controller
+            </button>
+            <div id="ble-output-box" style="font-family: monospace; font-size: 12px; color: var(--accent-green); white-space: pre-wrap; margin-top: 10px;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Raw TOML Tab -->
+      <section id="tab-toml" class="tab-pane">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span id="config-path-label" style="font-size: 12px; color: var(--text-muted); font-family: monospace;"></span>
+            <button id="btn-format-toml">Format & Validate</button>
+          </div>
+          <textarea
+            id="raw-toml-editor"
+            style="flex: 1; min-height: 500px; background-color: var(--bg-surface); color: var(--text-main); font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.5; padding: 16px; border: 1px solid var(--border); border-radius: 8px; resize: none; outline: none;"
+          ></textarea>
+        </div>
+      </section>
+    </main>
+
+    <!-- Key Binding Modal -->
+    <div id="modal-binding" class="modal-backdrop">
+      <div class="modal-window">
+        <div class="modal-header">
+          <h3 id="modal-binding-title" class="modal-title">Configure Button</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Physical Keyboard Capture Box -->
+          <div style="background-color: var(--bg-overlay); border: 2px dashed var(--border-focus); border-radius: 8px; padding: 16px; text-align: center; cursor: pointer;" id="key-recorder-box">
+            <span style="font-size: 14px; font-weight: 700; color: var(--accent-blue);">⌨️ Click here & press keys on your keyboard</span>
+            <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Supports chords (e.g. Ctrl + Shift + D) and single keys (ESC cancels)</p>
+          </div>
+
+          <!-- Direct Key input -->
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Mapped Key / Chord:</label>
+            <input type="text" id="input-binding-keys" placeholder="e.g. LEFTCTRL+LEFTSHIFT+D or SPACE" style="width: 100%;" />
+          </div>
+
+          <!-- Shell Command (Optional) -->
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Shell Command (Optional):</label>
+            <input type="text" id="input-binding-exec" placeholder="e.g. playerctl play-pause" style="width: 100%;" />
+          </div>
+
+          <!-- Description / Inline Comment -->
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Inline Tooltip / Description:</label>
+            <input type="text" id="input-binding-desc" placeholder="e.g. Next Workspace / Play-Pause" style="width: 100%;" />
+          </div>
+
+          <!-- Quick Key Catalog -->
+          <div>
+            <div class="key-category-title">Quick Modifiers</div>
+            <div class="key-chips-row" id="chips-modifiers"></div>
+          </div>
+          <div>
+            <div class="key-category-title">Common & Navigation</div>
+            <div class="key-chips-row" id="chips-common"></div>
+          </div>
+          <div>
+            <div class="key-category-title">Function Keys (F1..F20)</div>
+            <div class="key-chips-row" id="chips-fn"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-binding-clear" class="danger">Clear (None)</button>
+          <button class="modal-cancel-btn">Cancel</button>
+          <button id="btn-binding-apply" class="primary">Apply Binding</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Window Picker Modal -->
+    <div id="modal-window-picker" class="modal-backdrop">
+      <div class="modal-window">
+        <div class="modal-header">
+          <h3 class="modal-title">Pick Active Window from OS</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input type="text" id="window-search-input" placeholder="🔍 Search open windows..." style="width: 100%; margin-bottom: 8px;" />
+          <div id="open-windows-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto;"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-cancel-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- New Profile Modal -->
+    <div id="modal-new-profile" class="modal-backdrop">
+      <div class="modal-window">
+        <div class="modal-header">
+          <h3 class="modal-title">Create New Profile</h3>
+          <button class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Profile Name:</label>
+            <input type="text" id="new-profile-name" placeholder="e.g. spotify or blender" style="width: 100%;" />
+          </div>
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Description:</label>
+            <input type="text" id="new-profile-desc" placeholder="e.g. Spotify Media Controls" style="width: 100%;" />
+          </div>
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Match Window Class (Regex or exact name):</label>
+            <input type="text" id="new-profile-class" placeholder="e.g. ^(spotify|Spotify)$" style="width: 100%;" />
+          </div>
+          <div class="control-group" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label class="control-label">Match Window Title (Optional):</label>
+            <input type="text" id="new-profile-title" placeholder="e.g. Spotify" style="width: 100%;" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-cancel-btn">Cancel</button>
+          <button id="btn-create-profile-confirm" class="primary">Create Profile</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">Settings Saved</div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
