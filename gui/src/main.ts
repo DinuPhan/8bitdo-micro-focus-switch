@@ -96,11 +96,49 @@ const blePresetSelect = document.getElementById("ble-preset-select") as HTMLSele
 const bleTurnSelect = document.getElementById("ble-turn-select") as HTMLSelectElement;
 const bleOutputBox = document.getElementById("ble-output-box") as HTMLDivElement;
 
+// Visual Mapper Zoom
+const mapperSvg = document.getElementById("mapper-svg") as SVGElement | null;
+const zoomLevelLabel = document.getElementById("zoom-level-label") as HTMLSpanElement | null;
+const btnZoomIn = document.getElementById("btn-zoom-in") as HTMLButtonElement | null;
+const btnZoomOut = document.getElementById("btn-zoom-out") as HTMLButtonElement | null;
+const btnZoomFit = document.getElementById("btn-zoom-fit") as HTMLButtonElement | null;
+let mapperZoomLevel = 1.0;
+
+function setMapperZoom(level: number) {
+  mapperZoomLevel = Math.max(0.6, Math.min(2.5, Math.round(level * 20) / 20));
+  if (mapperSvg) {
+    mapperSvg.style.transform = `scale(${mapperZoomLevel})`;
+  }
+  if (zoomLevelLabel) {
+    zoomLevelLabel.textContent = `${Math.round(mapperZoomLevel * 100)}%`;
+  }
+}
+
+function setupMapperZoom() {
+  btnZoomIn?.addEventListener("click", () => setMapperZoom(mapperZoomLevel + 0.1));
+  btnZoomOut?.addEventListener("click", () => setMapperZoom(mapperZoomLevel - 0.1));
+  btnZoomFit?.addEventListener("click", () => setMapperZoom(1.0));
+
+  const canvasWrapper = document.querySelector(".canvas-wrapper") as HTMLElement | null;
+  canvasWrapper?.addEventListener(
+    "wheel",
+    (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.08 : -0.08;
+        setMapperZoom(mapperZoomLevel + delta);
+      }
+    },
+    { passive: false }
+  );
+}
+
 // ----------------------------------------------------------------------------
 // Initialization
 // ----------------------------------------------------------------------------
 async function init() {
   setupTabs();
+  setupMapperZoom();
   initComboButtonsGrid();
   setupCatalogChips();
   setupKeyRecorder();
@@ -287,7 +325,7 @@ function renderSvgCallouts() {
     const cardGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     cardGroup.classList.add("callout-card-group");
     const bx = meta.side === "left" ? tx - 250 : tx;
-    const by = ty - 18;
+    const by = ty - 20;
     cardGroup.setAttribute("transform", `translate(${bx}, ${by})`);
 
     // SVG Title tooltip for card hover
@@ -299,7 +337,7 @@ function renderSvgCallouts() {
     const cardBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     cardBg.classList.add("card-bg");
     cardBg.setAttribute("width", "250");
-    cardBg.setAttribute("height", "36");
+    cardBg.setAttribute("height", "40");
     cardBg.setAttribute("rx", "8");
     cardBg.setAttribute("fill", "url(#card-grad)");
     cardBg.setAttribute("stroke", isInherited ? "#45475a" : "#313244");
@@ -309,9 +347,9 @@ function renderSvgCallouts() {
     // Button badge
     const badgeBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     badgeBg.setAttribute("x", "6");
-    badgeBg.setAttribute("y", "6");
+    badgeBg.setAttribute("y", "7");
     badgeBg.setAttribute("width", "68");
-    badgeBg.setAttribute("height", "24");
+    badgeBg.setAttribute("height", "26");
     badgeBg.setAttribute("rx", "5");
     badgeBg.setAttribute("fill", meta.color);
     badgeBg.setAttribute("fill-opacity", "0.18");
@@ -321,10 +359,10 @@ function renderSvgCallouts() {
 
     const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
     badgeText.setAttribute("x", "40");
-    badgeText.setAttribute("y", "22");
+    badgeText.setAttribute("y", "24");
     badgeText.setAttribute("text-anchor", "middle");
     badgeText.setAttribute("fill", meta.color);
-    badgeText.setAttribute("font-size", "11");
+    badgeText.setAttribute("font-size", "11.5");
     badgeText.setAttribute("font-weight", "bold");
     badgeText.textContent = meta.label;
     cardGroup.appendChild(badgeText);
@@ -333,9 +371,9 @@ function renderSvgCallouts() {
       // Line 1: Action (e.g. "Space" or "Ctrl + Shift + D")
       const txtMain = document.createElementNS("http://www.w3.org/2000/svg", "text");
       txtMain.setAttribute("x", "84");
-      txtMain.setAttribute("y", "17");
+      txtMain.setAttribute("y", "18");
       txtMain.setAttribute("fill", isInherited ? "#a6adc8" : "#cdd6f4");
-      txtMain.setAttribute("font-size", "11");
+      txtMain.setAttribute("font-size", "12");
       txtMain.setAttribute("font-weight", "bold");
       txtMain.textContent = truncate(actionStr, 20);
       cardGroup.appendChild(txtMain);
@@ -343,19 +381,19 @@ function renderSvgCallouts() {
       // Line 2: Inline description / comment (e.g. "Start, Stop video")
       const txtDesc = document.createElementNS("http://www.w3.org/2000/svg", "text");
       txtDesc.setAttribute("x", "84");
-      txtDesc.setAttribute("y", "29");
+      txtDesc.setAttribute("y", "32");
       txtDesc.setAttribute("fill", "#a6adc8");
-      txtDesc.setAttribute("font-size", "10");
-      txtDesc.setAttribute("font-weight", "500");
+      txtDesc.setAttribute("font-size", "10.5");
+      txtDesc.setAttribute("font-weight", "600");
       txtDesc.textContent = truncate(descText, 25);
       cardGroup.appendChild(txtDesc);
     } else {
       // Single centered line: Action
       const txtMain = document.createElementNS("http://www.w3.org/2000/svg", "text");
       txtMain.setAttribute("x", "84");
-      txtMain.setAttribute("y", "23");
+      txtMain.setAttribute("y", "25");
       txtMain.setAttribute("fill", isInherited ? "#a6adc8" : (actionStr === "None" ? "#6c7086" : "#cdd6f4"));
-      txtMain.setAttribute("font-size", "12");
+      txtMain.setAttribute("font-size", "13");
       txtMain.setAttribute("font-weight", "bold");
       txtMain.textContent = truncate(actionStr, 22);
       cardGroup.appendChild(txtMain);

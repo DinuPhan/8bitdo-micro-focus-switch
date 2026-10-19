@@ -69,12 +69,11 @@
           <svg
             id="mapper-svg"
             xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 1200 650"
-            width="1200"
-            height="650"
+            viewBox="15 72 1170 492"
+            preserveAspectRatio="xMidYMid meet"
           >
             <!-- Background & Definitions -->
-            <rect width="1200" height="650" fill="#11111b" rx="16" />
+            <rect x="15" y="72" width="1170" height="492" fill="#11111b" rx="16" />
             <defs>
               <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation="3.5" result="blur" />
@@ -102,6 +101,14 @@
             <!-- Dynamic Pin Circles on Controller -->
             <g id="svg-pins-layer"></g>
           </svg>
+
+          <!-- Floating Zoom Controls -->
+          <div class="mapper-zoom-toolbar">
+            <button id="btn-zoom-out" title="Zoom Out (Ctrl -)">−</button>
+            <span id="zoom-level-label">100%</span>
+            <button id="btn-zoom-in" title="Zoom In (Ctrl +)">+</button>
+            <button id="btn-zoom-fit" title="Fit to Screen">⛶ Fit</button>
+          </div>
         </div>
       </section>
 
