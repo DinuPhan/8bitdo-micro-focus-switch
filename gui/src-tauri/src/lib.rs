@@ -117,7 +117,7 @@ fn write_config(content: String) -> Result<(), String> {
 #[tauri::command]
 fn get_daemon_status() -> Result<DaemonStatus, String> {
     // Check if daemon process is currently running
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         if let Ok(output) = Command::new("pgrep").args(["-f", "8bitdo-micro-focus-switch daemon"]).output() {
             if output.status.success() {
@@ -160,28 +160,19 @@ fn reload_daemon() -> Result<String, String> {
 #[tauri::command]
 fn toggle_daemon(start: bool) -> Result<bool, String> {
     if start {
-        // Spawn daemon in background detached
-        #[cfg(target_os = "linux")]
-        {
-            Command::new("8bitdo-micro-focus-switch")
-                .arg("daemon")
-                .spawn()
-                .map_err(|e| format!("Failed to start daemon: {}", e))?;
-            return Ok(true);
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            Command::new("8bitdo-micro-focus-switch")
-                .arg("daemon")
-                .spawn()
-                .map_err(|e| format!("Failed to start daemon: {}", e))?;
-            return Ok(true);
-        }
+        Command::new("8bitdo-micro-focus-switch")
+            .arg("daemon")
+            .spawn()
+            .map_err(|e| format!("Failed to start daemon: {}", e))?;
+        Ok(true)
     } else {
-        // Stop daemon
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             let _ = Command::new("pkill").args(["-f", "8bitdo-micro-focus-switch daemon"]).output();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = Command::new("taskkill").args(["/F", "/IM", "8bitdo-micro-focus-switch.exe"]).output();
         }
         Ok(false)
     }
