@@ -996,6 +996,158 @@ B = "Space"
     assert "L+R" not in hw.slots
 
 
+def test_daemon_combo_key_repeat_while_pending(tmp_path: Path) -> None:
+    import asyncio
+
+    toml_doc = """
+[general]
+combo_timeout_ms = 40
+
+[profiles.test]
+turn = 0
+match_class = "test"
+L2 = "L"
+
+[profiles.test.combos]
+"L2+LEFT" = ["LEFTMETA", "LEFT"]
+"""
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    async def _run() -> None:
+        daemon = FocusSwitchDaemon(cfg)
+        ui = _FakeUInput()
+        daemon._on_focus_change(ActiveWindow(window_class="test", window_title="Test"))
+
+        # 1. Press L2 (KEY_L) -> enters combo pending buffer
+        daemon.handle_key_event(ui, ecodes.KEY_L, 1)
+        assert len(ui.events) == 0
+
+        # 2. Kernel/controller sends repeat (value=2) before 40ms timeout pops
+        daemon.handle_key_event(ui, ecodes.KEY_L, 2)
+        # Should immediately flush solo L keydown and emit repeat!
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_L, 1),
+            (ecodes.EV_SYN, 0, 0),
+            (ecodes.EV_KEY, ecodes.KEY_L, 2),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 3. Release L2 (value=0) -> should cleanly emit keyup
+        daemon.handle_key_event(ui, ecodes.KEY_L, 0)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_L, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        assert len(daemon._held_chords) == 0
+        assert len(daemon._pending_buttons) == 0
+
+    asyncio.run(_run())
+
+
+def test_daemon_duplicate_press_timer_leak_prevention(tmp_path: Path) -> None:
+    import asyncio
+
+    toml_doc = """
+[general]
+combo_timeout_ms = 40
+
+[profiles.test]
+turn = 0
+match_class = "test"
+L2 = "L"
+
+[profiles.test.combos]
+"L2+LEFT" = ["LEFTMETA", "LEFT"]
+"""
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    async def _run() -> None:
+        daemon = FocusSwitchDaemon(cfg)
+        ui = _FakeUInput()
+        daemon._on_focus_change(ActiveWindow(window_class="test", window_title="Test"))
+
+        # 1. First press of KEY_L
+        daemon.handle_key_event(ui, ecodes.KEY_L, 1)
+        assert len(ui.events) == 0
+        assert ecodes.KEY_L in daemon._pending_buttons
+        first_handle = daemon._pending_buttons[ecodes.KEY_L].timer_handle
+
+        # 2. Second press of KEY_L before timeout (e.g. bounce or repeat as value 1)
+        await asyncio.sleep(0.015)
+        daemon.handle_key_event(ui, ecodes.KEY_L, 1)
+        # First timer must be cancelled, new handle created
+        assert first_handle.cancelled()
+
+        # 3. Wait for second timer to pop (>40ms)
+        await asyncio.sleep(0.05)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_L, 1),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 4. Third press while already held -> ignored
+        daemon.handle_key_event(ui, ecodes.KEY_L, 1)
+        assert len(ui.events) == 0
+
+        # 5. Clean release
+        daemon.handle_key_event(ui, ecodes.KEY_L, 0)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_L, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        assert len(daemon._held_chords) == 0
+
+    asyncio.run(_run())
+
+
+def test_daemon_flush_after_early_release_safety(tmp_path: Path) -> None:
+    toml_doc = """
+[general]
+combo_timeout_ms = 40
+
+[profiles.test]
+turn = 0
+match_class = "test"
+LEFT = "E"
+
+[profiles.test.combos]
+"L2+LEFT" = ["LEFTMETA", "LEFT"]
+"""
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    daemon = FocusSwitchDaemon(cfg)
+    ui = _FakeUInput()
+    daemon._on_focus_change(ActiveWindow(window_class="test", window_title="Test"))
+
+    # Put LEFT (KEY_E) into pending
+    from eightbitdo_micro_focus_switch.daemon import _PendingButton
+    action = cfg.get_profile("test").buttons["LEFT"]
+    daemon._pending_buttons[ecodes.KEY_E] = _PendingButton(
+        keycode=ecodes.KEY_E,
+        button_name="LEFT",
+        action=action,
+        timer_handle=None,
+    )
+    # Simulate that physical button is NO LONGER held down
+    daemon._physical_held_buttons.pop(ecodes.KEY_E, None)
+
+    # Now flush callback executes
+    daemon._flush_pending_button(ui, ecodes.KEY_E)
+
+    # Must NOT emit solo down because physical button is not held!
+    assert len(ui.events) == 0
+    assert len(daemon._held_chords) == 0
+
+
+
 
 
 
