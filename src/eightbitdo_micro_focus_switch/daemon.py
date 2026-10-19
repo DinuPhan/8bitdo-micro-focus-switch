@@ -250,6 +250,9 @@ class FocusSwitchDaemon:
         pending = self._pending_buttons.pop(keycode, None)
         if pending is None:
             return
+        # If the physical button was already released, do not emit solo down
+        if keycode not in self._physical_held_buttons:
+            return
         if pending.action is not None:
             self._emit_solo_down(ui, pending.keycode, pending.action)
 
@@ -307,9 +310,29 @@ class FocusSwitchDaemon:
             if held:
                 ui.write(ecodes.EV_KEY, held[-1], 2)
                 ui.syn()
+                return
+            # If repeat arrives while pending in combo buffer, user is deliberately holding the button
+            pending = self._pending_buttons.pop(keycode, None)
+            if pending is not None:
+                if pending.timer_handle is not None:
+                    pending.timer_handle.cancel()
+                if pending.action is not None:
+                    self._emit_solo_down(ui, pending.keycode, pending.action)
+                    if pending.action.evdev_codes:
+                        ui.write(ecodes.EV_KEY, pending.action.evdev_codes[-1], 2)
+                        ui.syn()
             return
 
         # 3. PRESS (value == 1)
+        # Cancel any previous pending timer for this key to prevent timer leak/duplicate flush
+        old_pending = self._pending_buttons.pop(keycode, None)
+        if old_pending is not None and old_pending.timer_handle is not None:
+            old_pending.timer_handle.cancel()
+
+        # If key is already actively held (in chord or combo), ignore redundant keydown
+        if keycode in self._held_chords or keycode in self._held_combos:
+            return
+
         button_name = FACTORY_EVDEV_TO_BUTTON.get(keycode)
         if button_name is None:
             # Non-factory key: pass through directly
