@@ -338,7 +338,7 @@ def test_cli_discover_command(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Ca
     ret = cli.main(["discover", "--timeout", "1.0"])
     assert ret == 0
     out = capsys.readouterr().out
-    assert "8BitDo Micro Discovery & Connectivity Check" in out
+    assert "Discovery & Connectivity Check" in out
     assert "AA:BB:CC:DD:EE:FF" in out
     assert "RSSI=-42 dBm" in out
 
@@ -1565,6 +1565,210 @@ LEFT = "E"
     # Must NOT emit solo down because physical button is not held!
     assert len(ui.events) == 0
     assert len(daemon._held_chords) == 0
+
+
+def test_identify_controller_device() -> None:
+    from types import SimpleNamespace
+    from eightbitdo_micro_focus_switch.daemon import identify_controller_device
+
+    # 1. Micro by VID/PID
+    dev_micro_id = SimpleNamespace(
+        name="Unknown Gamepad",
+        info=SimpleNamespace(vendor=0x2DC8, product=0x9021),
+    )
+    assert identify_controller_device(dev_micro_id) == "8BitDo Micro"
+
+    # 2. Micro by Name
+    dev_micro_name = SimpleNamespace(
+        name="8BitDo Micro gamepad Keyboard",
+        info=SimpleNamespace(vendor=0x0000, product=0x0000),
+    )
+    assert identify_controller_device(dev_micro_name) == "8BitDo Micro"
+
+    # 3. Zero 2 by VID/PID (standard and alternate PIDs)
+    dev_zero2_3230 = SimpleNamespace(
+        name="Bluetooth Device",
+        info=SimpleNamespace(vendor=0x2DC8, product=0x3230),
+    )
+    assert identify_controller_device(dev_zero2_3230) == "8BitDo Zero 2"
+
+    dev_zero2_9018 = SimpleNamespace(
+        name="Bluetooth Device",
+        info=SimpleNamespace(vendor=0x2DC8, product=0x9018),
+    )
+    assert identify_controller_device(dev_zero2_9018) == "8BitDo Zero 2"
+
+    dev_zero2_2830 = SimpleNamespace(
+        name="Bluetooth Device",
+        info=SimpleNamespace(vendor=0x2DC8, product=0x2830),
+    )
+    assert identify_controller_device(dev_zero2_2830) == "8BitDo Zero 2"
+
+    # 4. Zero 2 by Name
+    dev_zero2_name = SimpleNamespace(
+        name="8BitDo Zero 2 gamepad",
+        info=SimpleNamespace(vendor=0x0000, product=0x0000),
+    )
+    assert identify_controller_device(dev_zero2_name) == "8BitDo Zero 2"
+
+    dev_zero2_name_short = SimpleNamespace(
+        name="Zero 2",
+        info=SimpleNamespace(vendor=0x1111, product=0x2222),
+    )
+    assert identify_controller_device(dev_zero2_name_short) == "8BitDo Zero 2"
+
+    # 5. Virtual Keyboard should be ignored
+    dev_virtual = SimpleNamespace(
+        name="8BitDo Micro Focus-Switch Virtual Keyboard",
+        info=SimpleNamespace(vendor=0x2DC8, product=0x9021),
+    )
+    assert identify_controller_device(dev_virtual) is None
+
+    # 6. Unrelated mouse/keyboard should be ignored
+    dev_unrelated = SimpleNamespace(
+        name="Logitech USB Receiver",
+        info=SimpleNamespace(vendor=0x046D, product=0xC52B),
+    )
+    assert identify_controller_device(dev_unrelated) is None
+
+
+def test_find_micro_input_devices_with_zero2(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+    from eightbitdo_micro_focus_switch import daemon
+
+    class MockInputDevice:
+        def __init__(self, path: str, name: str, vendor: int, product: int, has_key: bool = True) -> None:
+            self.path = path
+            self.name = name
+            self.info = SimpleNamespace(vendor=vendor, product=product)
+            self._has_key = has_key
+            self.closed = False
+
+        def capabilities(self) -> dict[int, list[int]]:
+            return {daemon.ecodes.EV_KEY: [1, 2, 3]} if self._has_key else {}
+
+        def close(self) -> None:
+            self.closed = True
+
+    devices_map = {
+        "/dev/input/event10": MockInputDevice("/dev/input/event10", "8BitDo Zero 2 gamepad", 0x2DC8, 0x3230),
+        "/dev/input/event11": MockInputDevice("/dev/input/event11", "8BitDo Micro gamepad Keyboard", 0x2DC8, 0x9021),
+        "/dev/input/event12": MockInputDevice(
+            "/dev/input/event12", "8BitDo Micro Focus-Switch Virtual Keyboard", 0x2DC8, 0x9021
+        ),
+        "/dev/input/event13": MockInputDevice("/dev/input/event13", "Generic USB Mouse", 0x1234, 0x5678, has_key=False),
+    }
+
+    monkeypatch.setattr(daemon, "HAS_EVDEV", True)
+    monkeypatch.setattr(daemon.evdev, "list_devices", lambda: list(devices_map.keys()))
+    monkeypatch.setattr(daemon, "InputDevice", lambda path: devices_map[path])
+
+    found = daemon.find_micro_input_devices()
+    paths = [d.path for d in found]
+    assert "/dev/input/event10" in paths  # Zero 2
+    assert "/dev/input/event11" in paths  # Micro
+    assert "/dev/input/event12" not in paths  # Virtual keyboard skipped
+    assert "/dev/input/event13" not in paths  # Unrelated device skipped
+    assert devices_map["/dev/input/event12"].closed is True
+    assert devices_map["/dev/input/event13"].closed is True
+
+
+def test_zero2_daemon_remapping_and_combos(tmp_path: Path) -> None:
+    """Test that Zero 2 in Keyboard mode (R+START emitting c..o) triggers all FocusSwitchDaemon remappings."""
+    toml_doc = """
+fallback_profile = "default"
+
+[profiles.default]
+name = "default"
+match_class = "test"
+turn = 0
+A = "ENTER"
+B = "ESC"
+X = ["Ctrl", "C"]
+Y = ["Ctrl", "V"]
+Up = "UP"
+Down = "DOWN"
+L = "PAGEUP"
+R = "PAGEDOWN"
+Select = "TAB"
+Start = "SPACE"
+
+[profiles.default.combos]
+"L+R" = ["Super", "K"]
+"Select+Start" = ["Ctrl", "Alt", "T"]
+
+[profiles.vertical]
+name = "vertical"
+turn = 90
+Up = "PAGEUP"
+Down = "PAGEDOWN"
+Left = "LEFT"
+Right = "RIGHT"
+"""
+    cfg_file = tmp_path / "profiles.toml"
+    cfg_file.write_text(toml_doc, encoding="utf-8")
+    cfg = load_config(cfg_file)
+
+    async def _run_async_test() -> None:
+        daemon = FocusSwitchDaemon(cfg)
+        ui = _FakeUInput()
+        daemon._on_focus_change(ActiveWindow(window_class="test", window_title="Test Window"))
+
+        # 1. Test Zero 2 'A' button (factory scancode KEY_G -> maps to ENTER)
+        daemon.handle_key_event(ui, ecodes.KEY_G, 1)  # Press
+        assert (ecodes.EV_KEY, ecodes.KEY_ENTER, 1) in ui.events
+        ui.events.clear()
+        daemon.handle_key_event(ui, ecodes.KEY_G, 0)  # Release
+        assert (ecodes.EV_KEY, ecodes.KEY_ENTER, 0) in ui.events
+        ui.events.clear()
+
+        # 2. Test Zero 2 'B' button (factory scancode KEY_J -> maps to ESC)
+        daemon.handle_key_event(ui, ecodes.KEY_J, 1)
+        assert (ecodes.EV_KEY, ecodes.KEY_ESC, 1) in ui.events
+        ui.events.clear()
+        daemon.handle_key_event(ui, ecodes.KEY_J, 0)
+        assert (ecodes.EV_KEY, ecodes.KEY_ESC, 0) in ui.events
+        ui.events.clear()
+
+        # 3. Test Zero 2 Chord: 'X' button (factory scancode KEY_H -> maps to Ctrl+C)
+        daemon.handle_key_event(ui, ecodes.KEY_H, 1)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 1),
+            (ecodes.EV_KEY, ecodes.KEY_C, 1),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+        daemon.handle_key_event(ui, ecodes.KEY_H, 0)
+        assert ui.events == [
+            (ecodes.EV_KEY, ecodes.KEY_C, 0),
+            (ecodes.EV_KEY, ecodes.KEY_LEFTCTRL, 0),
+            (ecodes.EV_SYN, 0, 0),
+        ]
+        ui.events.clear()
+
+        # 4. Test Zero 2 Combo: L (KEY_K) + R (KEY_M) -> Super + K
+        daemon.handle_key_event(ui, ecodes.KEY_K, 1)  # L pressed (buffered for combo)
+        assert len(ui.events) == 0  # Buffered
+        daemon.handle_key_event(ui, ecodes.KEY_M, 1)  # R pressed -> combo triggered!
+        assert (ecodes.EV_KEY, ecodes.KEY_LEFTMETA, 1) in ui.events
+        assert (ecodes.EV_KEY, ecodes.KEY_K, 1) in ui.events
+        ui.events.clear()
+        daemon.handle_key_event(ui, ecodes.KEY_K, 0)  # Release L
+        assert (ecodes.EV_KEY, ecodes.KEY_K, 0) in ui.events
+        assert (ecodes.EV_KEY, ecodes.KEY_LEFTMETA, 0) in ui.events
+        ui.events.clear()
+
+        # 5. Test Zero 2 D-Pad Rotation (turn = 90 on vertical profile)
+        daemon.active_profile = cfg.get_profile("vertical")
+        # On Zero 2, physical Up is KEY_C. With turn=90 CW: Up rotates to Right!
+        daemon.handle_key_event(ui, ecodes.KEY_C, 1)
+        assert (ecodes.EV_KEY, ecodes.KEY_RIGHT, 1) in ui.events
+        daemon.handle_key_event(ui, ecodes.KEY_C, 0)
+        assert (ecodes.EV_KEY, ecodes.KEY_RIGHT, 0) in ui.events
+
+    import asyncio
+    asyncio.run(_run_async_test())
+
 
 
 

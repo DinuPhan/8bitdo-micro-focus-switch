@@ -1,24 +1,26 @@
 # 8bitdo-micro-focus-switch
-
-Turn your **8BitDo Micro** into the ultimate one-handed shortcut remote on Linux. Automatically switches button mappings based on which application is currently in focus — no phone required.
+ 
+Turn your **8BitDo Micro** or **8BitDo Zero 2** into the ultimate one-handed shortcut remote on Linux, Windows, and macOS. Automatically switches button mappings based on which application is currently in focus — no phone required.
 
 ---
 
 ## Why this exists
 
-The **8BitDo Micro** is a featherlight ($25, 24-gram) controller with 16 buttons. In Keyboard (`K`) mode, it is hands-down the best one-handed macro pad for:
+The **8BitDo Micro** (16 buttons) and **8BitDo Zero 2** (12 buttons) are featherlight, ultra-compact controllers. In Keyboard mode (`K` on Micro; `R + START` on Zero 2), they are hands-down the best one-handed macro pads for:
 - Terminal coding & AI prompt workflows
 - Relaxing back while watching YouTube or movies
 - Reviewing Anki flashcards
 - Smooth article and web browsing
 
-**The catch with the official setup:** The official 8BitDo mobile app only lets you store one custom profile on the controller at a time. If you want to switch from Anki to YouTube, you normally have to unpair, open an Android app, re-flash the profile, and pair back to your computer.
+**The catch with the official setup:**
+- **Zero 2**: 8BitDo never created any companion software for the Zero 2. You were forever stuck with fixed factory keys!
+- **Micro**: The official 8BitDo mobile app only lets you store one custom profile on the controller at a time. Switching apps requires unpairing, opening a phone app, re-flashing, and reconnecting.
 
 **With `8bitdo-micro-focus-switch`:**
 - **Zero-touch automatic switching**: Your controller rebinds itself as you switch windows on your desktop.
-- **Visual Keymap HUD**: Forget which button does what? One command or hotkey pops up a visual diagram showing all 16 buttons with glowing pointers and label badges.
-- **No phone required**: Reads and flashes hardware profiles directly from your Linux machine over Bluetooth.
-- **Instant response**: Sub-millisecond virtual keyboard remapping with multi-key chords and shell command support.
+- **Full Zero 2 Superpowers**: Gives 8BitDo Zero 2 users window-specific profile switching, multi-button chords, shell commands, and D-pad rotation for the first time ever!
+- **Visual Keymap HUD**: Forget which button does what? One command or hotkey pops up a visual diagram showing button mappings with glowing pointers and label badges.
+- **No phone required**: Direct desktop daemon remapping via `uinput` (<1ms latency) plus phone-free BLE hardware flashing for the Micro.
 
 ---
 
@@ -83,9 +85,10 @@ uv pip install -e .
 
 ### 2. Pair Controller
 
-1. Switch the bottom slider on the 8BitDo Micro to **`K`** (Keyboard mode).
-2. Hold the small **Pair** button on the bottom until the LED blinks rapidly.
-3. Pair with your Linux machine in your Bluetooth settings. It will connect as an input keyboard.
+- **8BitDo Micro**: Switch the bottom slider to **`K`** (Keyboard mode). Hold the small **Pair** button on the bottom until the LED blinks rapidly, then pair via Bluetooth.
+- **8BitDo Zero 2**: Turn on the controller by holding **`R + START`** (Keyboard mode). Hold the **Select** button for 3 seconds until the blue LED blinks rapidly, then pair via Bluetooth.
+
+The daemon automatically detects both models dynamically upon connection.
 
 ### 3. Quick Status Check
 

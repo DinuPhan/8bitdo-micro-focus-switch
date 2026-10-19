@@ -29,6 +29,13 @@ from .protocol import (
     MICRO_PRODUCT_ID,
     MICRO_VENDOR_ID,
     NAME_TO_EVDEV,
+    SUPPORTED_KEYBOARD_DEVICE_IDS,
+    SUPPORTED_KEYBOARD_NAME_SUBSTRINGS,
+    ZERO2_INPUT_NAME_SUBSTRING,
+    ZERO2_PRODUCT_ID,
+    ZERO2_PRODUCT_ID_ALT,
+    ZERO2_PRODUCT_ID_BT,
+    ZERO2_VENDOR_ID,
     rotate_dpad_button,
 )
 
@@ -54,8 +61,31 @@ class _PendingButton:
     timer_handle: asyncio.TimerHandle | None = None
 
 
+def identify_controller_device(dev: InputDevice) -> str | None:
+    """Identify whether an input device is an 8BitDo Micro or Zero 2 in Keyboard mode.
+
+    Returns the controller model name (e.g. '8BitDo Micro' or '8BitDo Zero 2'),
+    or None if the device does not match any supported 8BitDo controller.
+    """
+    if dev.name == VIRTUAL_DEVICE_NAME:
+        return None
+    try:
+        info = dev.info
+        model = SUPPORTED_KEYBOARD_DEVICE_IDS.get((info.vendor, info.product))
+        if model is not None:
+            return model
+    except Exception:
+        pass
+
+    dev_name = (dev.name or "").lower()
+    for substr, model_name in SUPPORTED_KEYBOARD_NAME_SUBSTRINGS:
+        if substr in dev_name:
+            return model_name
+    return None
+
+
 def find_micro_input_devices() -> list[InputDevice]:
-    """Return all /dev/input/event* devices matching the 8BitDo Micro Keyboard."""
+    """Return all /dev/input/event* devices matching the 8BitDo Micro or 8BitDo Zero 2 Keyboard."""
     if not HAS_EVDEV:
         return []
     matched: list[InputDevice] = []
@@ -67,16 +97,17 @@ def find_micro_input_devices() -> list[InputDevice]:
         if dev.name == VIRTUAL_DEVICE_NAME:
             dev.close()
             continue
-        info = dev.info
-        is_micro_id = info.vendor == MICRO_VENDOR_ID and info.product == MICRO_PRODUCT_ID
-        is_micro_name = MICRO_INPUT_NAME_SUBSTRING.lower() in (dev.name or "").lower()
-        if is_micro_id or is_micro_name:
+        model = identify_controller_device(dev)
+        if model is not None:
             caps = dev.capabilities()
             if ecodes.EV_KEY in caps:
                 matched.append(dev)
                 continue
         dev.close()
     return matched
+
+
+find_supported_input_devices = find_micro_input_devices
 
 
 def check_uinput_access() -> tuple[bool, str]:
@@ -478,7 +509,7 @@ class FocusSwitchDaemon:
             while True:
                 devices = find_micro_input_devices()
                 if not devices:
-                    logger.info("Waiting for 8BitDo Micro Keyboard in /dev/input/event* ...")
+                    logger.info("Waiting for 8BitDo Micro / Zero 2 Keyboard in /dev/input/event* ...")
                     await asyncio.sleep(1.5)
                     continue
 
@@ -486,10 +517,12 @@ class FocusSwitchDaemon:
                 for extra in devices[1:]:
                     extra.close()
 
+                model = identify_controller_device(dev) or "8BitDo Controller"
                 logger.info(
-                    "Attached to %s (%s, uniq=%s) | Active profile: %s",
+                    "Attached to %s (%s, model=%s, uniq=%s) | Active profile: %s",
                     dev.path,
                     dev.name,
+                    model,
                     dev.uniq,
                     self.active_profile.name,
                 )
@@ -499,7 +532,7 @@ class FocusSwitchDaemon:
                         if event.type == ecodes.EV_KEY:
                             self.handle_key_event(ui, event.code, event.value)
                 except OSError as exc:
-                    logger.info("8BitDo Micro disconnected (%s); releasing held keys.", exc)
+                    logger.info("%s disconnected (%s); releasing held keys.", model, exc)
                 finally:
                     self._cleanup_held_keys_on_disconnect(ui)
                     try:

@@ -20,7 +20,12 @@ from .ble import (
     write_hardware_profile,
 )
 from .config import DEFAULT_CONFIG_PATH, ensure_default_config, load_config
-from .daemon import FocusSwitchDaemon, check_uinput_access, find_micro_input_devices
+from .daemon import (
+    FocusSwitchDaemon,
+    check_uinput_access,
+    find_micro_input_devices,
+    identify_controller_device,
+)
 from .hyprland import find_hyprland_socket2, query_active_window
 from .protocol import (
     HID_TO_NAME,
@@ -128,11 +133,12 @@ async def _cmd_status(args: argparse.Namespace) -> int:
     print("=== Classic HID Input (/dev/input) ===")
     devs = find_micro_input_devices()
     if not devs:
-        print("8BitDo Micro Keyboard : not connected")
+        print("8BitDo Micro / Zero 2 Keyboard : not connected")
     else:
         for d in devs:
+            model = identify_controller_device(d) or "8BitDo Controller"
             print(
-                f"Device           : {d.path} ({d.name!r}, "
+                f"Device           : {d.path} ({d.name!r}, model={model}, "
                 f"vendor=0x{d.info.vendor:04x}, product=0x{d.info.product:04x}, uniq={d.uniq!r})"
             )
             d.close()
@@ -878,31 +884,33 @@ async def _cmd_show(args: argparse.Namespace) -> int:
 
 async def _cmd_discover(args: argparse.Namespace) -> int:
     timeout = getattr(args, "timeout", 4.0)
-    print("=== 8BitDo Micro Discovery & Connectivity Check ===\n")
+    print("=== 8BitDo Controller Discovery & Connectivity Check ===\n")
 
     # 1. Classic Bluetooth / evdev input devices
     print("1. Classic Bluetooth HID Devices (/dev/input/event*):")
     devs = find_micro_input_devices()
     if not devs:
-        print("   • No 8BitDo Micro paired & connected as HID keyboard right now.")
-        print("     (Make sure slider is at 'K' and controller is paired in Bluetooth settings)")
+        print("   • No 8BitDo Micro or Zero 2 paired & connected as HID keyboard right now.")
+        print("     - 8BitDo Micro : ensure slider is set to 'K'")
+        print("     - 8BitDo Zero 2: turn on by holding R + START")
     else:
         for d in devs:
+            model = identify_controller_device(d) or "8BitDo Controller"
             print(
-                f"   ✓ Found {d.path}: {d.name!r} (Vendor=0x{d.info.vendor:04x}, "
+                f"   ✓ Found {d.path}: {d.name!r} [{model}] (Vendor=0x{d.info.vendor:04x}, "
                 f"Product=0x{d.info.product:04x}, BT_MAC={d.uniq})"
             )
             d.close()
     print()
 
     # 2. Over-the-air BLE GATT peripherals
-    print("2. Over-the-Air BLE GATT Peripherals ('80EL'):")
+    print("2. Over-the-Air BLE GATT Peripherals ('80EL' - 8BitDo Micro only):")
     print(f"   Scanning 2.4GHz BLE advertisements for {timeout:.1f}s ...")
     try:
         ble_devs = await scan_for_micro_ble_devices(timeout=timeout)
         if not ble_devs:
             print("   • No '80EL' BLE peripherals detected nearby.")
-            print("     (Ensure controller is powered on and within range)")
+            print("     (Note: BLE GATT hardware flashing is specific to 8BitDo Micro)")
         else:
             for b in ble_devs:
                 rssi_str = f"RSSI={b.rssi} dBm" if b.rssi is not None else ""
@@ -912,7 +920,7 @@ async def _cmd_discover(args: argparse.Namespace) -> int:
 
     print("\nSummary:")
     print(" • Controller discovery is 100% dynamic: no MAC addresses or event paths are hard-coded.")
-    print(" • Any 8BitDo Micro will be auto-detected upon pairing and powering on.")
+    print(" • Any 8BitDo Micro or Zero 2 will be auto-detected upon pairing and powering on.")
     return 0
 
 

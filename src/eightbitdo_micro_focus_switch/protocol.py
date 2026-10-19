@@ -52,10 +52,33 @@ except ImportError:
 
     ecodes = _EcodesFallback()  # type: ignore
 
-# Classic HID Keyboard identifiers (Keyboard mode 'K')
+# Classic HID Keyboard identifiers (Keyboard mode 'K' / 'R+START')
 MICRO_VENDOR_ID = 0x2DC8
 MICRO_PRODUCT_ID = 0x9021
 MICRO_INPUT_NAME_SUBSTRING = "8BitDo Micro"
+
+ZERO2_VENDOR_ID = 0x2DC8
+ZERO2_PRODUCT_ID = 0x3230
+ZERO2_PRODUCT_ID_ALT = 0x9018
+ZERO2_PRODUCT_ID_BT = 0x2830
+ZERO2_INPUT_NAME_SUBSTRING = "8BitDo Zero 2"
+
+# Supported controller VID/PID combinations in Keyboard mode: (vendor_id, product_id) -> model display name
+SUPPORTED_KEYBOARD_DEVICE_IDS: dict[tuple[int, int], str] = {
+    (MICRO_VENDOR_ID, MICRO_PRODUCT_ID): "8BitDo Micro",
+    (ZERO2_VENDOR_ID, ZERO2_PRODUCT_ID): "8BitDo Zero 2",
+    (ZERO2_VENDOR_ID, ZERO2_PRODUCT_ID_ALT): "8BitDo Zero 2",
+    (ZERO2_VENDOR_ID, ZERO2_PRODUCT_ID_BT): "8BitDo Zero 2",
+}
+
+# Substring matches for device name fallback identification
+SUPPORTED_KEYBOARD_NAME_SUBSTRINGS: tuple[tuple[str, str], ...] = (
+    ("8bitdo micro", "8BitDo Micro"),
+    ("micro gamepad", "8BitDo Micro"),
+    ("8bitdo zero 2", "8BitDo Zero 2"),
+    ("zero 2 gamepad", "8BitDo Zero 2"),
+    ("zero 2", "8BitDo Zero 2"),
+)
 
 # BLE GATT identifiers (simultaneous config channel advertised as "80EL")
 BLE_DEVICE_NAME = "80EL"
@@ -116,6 +139,21 @@ PHYSICAL_BUTTONS: tuple[str, ...] = (
     "START",
     "STAR",
     "HOME",
+    "UP",
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+)
+
+ZERO2_PHYSICAL_BUTTONS: tuple[str, ...] = (
+    "A",
+    "B",
+    "X",
+    "Y",
+    "L",
+    "R",
+    "SELECT",
+    "START",
     "UP",
     "DOWN",
     "LEFT",
