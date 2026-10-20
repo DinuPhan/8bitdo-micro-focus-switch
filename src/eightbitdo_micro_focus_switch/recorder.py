@@ -421,6 +421,7 @@ def update_toml_binding(
     profile: str,
     button_or_combo: str,
     chord_keys: Sequence[str],
+    description: str | None = None,
 ) -> str:
     """Update or insert a button or combo binding in profiles.toml content while preserving other sections."""
     is_combo = "+" in button_or_combo
@@ -480,16 +481,20 @@ def update_toml_binding(
         m_key = key_re.search(sub_text)
 
         if m_key:
-            # Preserve existing inline comment if present
+            # Preserve existing inline comment if present unless description is explicitly provided
             existing_line = m_key.group(0)
             existing_comment = ""
-            if "#" in existing_line:
+            if description is not None:
+                clean_desc = description.strip()
+                if clean_desc:
+                    existing_comment = f"# {clean_desc}"
+            elif "#" in existing_line:
                 in_s, in_d = False, False
                 for i_ch, ch in enumerate(existing_line):
                     if ch == '"' and not in_s:
                         in_d = not in_d
                     elif ch == "'" and not in_d:
-                        in_s = not in_s
+                        in_s = not in_d
                     elif ch == "#" and not in_s and not in_d:
                         existing_comment = existing_line[i_ch:]
                         break
@@ -498,10 +503,14 @@ def update_toml_binding(
             # Replace existing line
             new_sub_text = sub_text[: m_key.start()] + line_to_put + sub_text[m_key.end() :]
         else:
+            if description and description.strip():
+                line_to_put = f"{line_to_put}  # {description.strip()}"
             # Append right under the subsection header
             new_sub_text = "\n" + line_to_put + sub_text
         new_prof_block = prof_block[:sub_start] + new_sub_text + prof_block[sub_end:]
     else:
+        if description and description.strip():
+            line_to_put = f"{line_to_put}  # {description.strip()}"
         # Subsection header does not exist: create it at the end of profile block
         addition = f"\n[profiles.{profile}.{section_sub}]\n{line_to_put}\n"
         new_prof_block = prof_block.rstrip() + addition + "\n"
@@ -514,10 +523,11 @@ def set_profile_binding(
     profile_name: str,
     button_or_combo: str,
     chord_keys: Sequence[str],
+    description: str | None = None,
 ) -> Path:
     """Save binding into config_path and validate TOML syntax."""
     content = config_path.read_text(encoding="utf-8")
-    new_content = update_toml_binding(content, profile_name, button_or_combo, chord_keys)
+    new_content = update_toml_binding(content, profile_name, button_or_combo, chord_keys, description=description)
     # Validate before writing
     config_path.write_text(new_content, encoding="utf-8")
     try:

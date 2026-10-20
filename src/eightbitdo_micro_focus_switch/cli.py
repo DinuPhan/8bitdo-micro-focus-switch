@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
@@ -113,6 +114,97 @@ async def _cmd_status(args: argparse.Namespace) -> int:
     win = await query_active_window()
     matched = cfg.resolve_profile_for_window(win.window_class, win.window_title)
 
+    service_systemd = is_systemd_service_active()
+    daemon_pids = [] if service_systemd else find_daemon_pids()
+    service_active = service_systemd or bool(daemon_pids)
+
+    devs = find_micro_input_devices()
+    devices_info = []
+    for d in devs:
+        model = identify_controller_device(d) or "8BitDo Controller"
+        devices_info.append({
+            "path": str(d.path),
+            "name": d.name or "",
+            "model": model,
+            "vendor": f"0x{d.info.vendor:04x}",
+            "product": f"0x{d.info.product:04x}",
+            "uniq": d.uniq or "",
+        })
+        d.close()
+
+    uinput_ok, uinput_msg = check_uinput_access()
+
+    if getattr(args, "json", False):
+        def _action_dict(act: object) -> dict[str, object]:
+            keys = list(getattr(act, "keys", ()))
+            exec_cmd = getattr(act, "exec_cmd", None)
+            desc = getattr(act, "description", None)
+            label = "+".join(keys) if keys else (f"exec:{exec_cmd}" if exec_cmd else "None")
+            return {
+                "keys": keys,
+                "exec": exec_cmd,
+                "label": label,
+                "description": desc or "",
+            }
+
+        global_combos_list = []
+        for c, act in cfg.global_combos.items():
+            combo_key = "+".join(sorted(c))
+            global_combos_list.append({
+                "combo": combo_key,
+                "buttons": sorted(c),
+                **_action_dict(act),
+            })
+
+        profiles_dict = {}
+        for pname, prof in cfg.profiles.items():
+            btns = {}
+            for b in PHYSICAL_BUTTONS:
+                b_act = prof.buttons.get(b)
+                if b_act is not None:
+                    btns[b] = _action_dict(b_act)
+                else:
+                    btns[b] = {"keys": [], "exec": None, "label": "None", "description": ""}
+            p_combos = []
+            for c, act in prof.combos.items():
+                combo_key = "+".join(sorted(c))
+                p_combos.append({
+                    "combo": combo_key,
+                    "buttons": sorted(c),
+                    **_action_dict(act),
+                })
+            profiles_dict[pname] = {
+                "name": prof.name,
+                "description": prof.description or "",
+                "turn": prof.turn,
+                "match_class": prof.match_class or "",
+                "match_title": prof.match_title or "",
+                "buttons": btns,
+                "combos": p_combos,
+            }
+
+        payload = {
+            "config_path": str(cfg_path),
+            "backend": cfg.backend,
+            "fallback_profile": cfg.fallback_profile,
+            "active_window": {
+                "class": win.window_class or "",
+                "title": win.window_title or "",
+            },
+            "active_profile": matched.name,
+            "active_turn": matched.turn,
+            "service_active": service_active,
+            "service_mode": "systemd" if service_systemd else ("standalone" if daemon_pids else "inactive"),
+            "uinput_ok": uinput_ok,
+            "uinput_message": uinput_msg,
+            "connected": len(devices_info) > 0,
+            "devices": devices_info,
+            "global_combos": global_combos_list,
+            "profiles": profiles_dict,
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+
     print("=== Hyprland Focus Status ===")
     print(f"Socket2 Path     : {sock or 'not found'}")
     print(f"Active Window    : class={win.window_class!r}, title={win.window_title!r}")
@@ -120,29 +212,23 @@ async def _cmd_status(args: argparse.Namespace) -> int:
     print()
 
     print("=== Daemon Background Service ===")
-    if is_systemd_service_active():
+    if service_systemd:
         print("Service Status   : Active (running via systemd --user 8bitdo-micro-focus-switch.service)")
+    elif daemon_pids:
+        print(f"Service Status   : Active (standalone PID(s): {', '.join(map(str, daemon_pids))})")
     else:
-        pids = find_daemon_pids()
-        if pids:
-            print(f"Service Status   : Active (standalone PID(s): {', '.join(map(str, pids))})")
-        else:
-            print("Service Status   : Inactive")
+        print("Service Status   : Inactive")
     print()
 
     print("=== Classic HID Input (/dev/input) ===")
-    devs = find_micro_input_devices()
-    if not devs:
+    if not devices_info:
         print("8BitDo Micro / Zero 2 Keyboard : not connected")
     else:
-        for d in devs:
-            model = identify_controller_device(d) or "8BitDo Controller"
+        for d_info in devices_info:
             print(
-                f"Device           : {d.path} ({d.name!r}, model={model}, "
-                f"vendor=0x{d.info.vendor:04x}, product=0x{d.info.product:04x}, uniq={d.uniq!r})"
+                f"Device           : {d_info['path']} ({d_info['name']!r}, model={d_info['model']}, "
+                f"vendor={d_info['vendor']}, product={d_info['product']}, uniq={d_info['uniq']!r})"
             )
-            d.close()
-    uinput_ok, uinput_msg = check_uinput_access()
     print(f"uinput Status    : {'OK' if uinput_ok else 'NEEDS PERMISSION'} ({uinput_msg})")
     print()
 
@@ -525,7 +611,8 @@ async def _cmd_bind(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        set_profile_binding(cfg_path, target_profile, target_btn, keys)
+        desc_arg = getattr(args, "description", None)
+        set_profile_binding(cfg_path, target_profile, target_btn, keys, description=desc_arg)
     except Exception as exc:
         print(f"Error saving binding: {exc}", file=sys.stderr)
         return 1
@@ -959,6 +1046,7 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common_parser],
         help="[Daily] Show Hyprland focus, connected controller, and profile status",
     )
+    p_status.add_argument("--json", action="store_true", help="Output structured JSON status for UI/plugin integration")
     p_status.add_argument("--ble", action="store_true", help="Also query live hardware state over BLE GATT")
     p_status.add_argument("--address", help="Optional BLE MAC address override (e.g. E4:17:D8:D8:52:02)")
     p_status.add_argument("--timeout", type=float, default=6.0, help="BLE scan timeout in seconds")
@@ -1075,6 +1163,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bind.add_argument("profile", nargs="?", help="Profile name (e.g. 'agy', 'youtube'). Defaults to focused window.")
     p_bind.add_argument("button", nargs="?", help="Button (e.g. 'A', 'L1', 'X') or combo (e.g. 'L+R', 'Select+Start').")
     p_bind.add_argument("--key", help="Specify key name or chord to bind directly without waiting for keypress")
+    p_bind.add_argument("-d", "--description", help="Optional inline comment/description for the binding")
     p_bind.add_argument("--list-keys", action="store_true", help="Display catalog of all bindable keys and exit")
 
     # record / listen
