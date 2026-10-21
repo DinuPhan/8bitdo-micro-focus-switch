@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
 import signal
 import sys
+import time
 from typing import Any, Coroutine
 
 try:
@@ -164,6 +166,68 @@ class FocusSwitchDaemon:
         self._ble_trigger = asyncio.Event()
         # Retain strong references to background execution tasks to prevent premature Python GC
         self._bg_tasks: set[asyncio.Task[Any]] = set()
+        self._event_seq: int = 0
+        self.keypress_event_path: Path | None = (
+            Path.home() / ".cache" / "8bitdo-micro" / "last_keypress.json"
+            if config_path is not None
+            else None
+        )
+        self._ensure_keypress_event_file()
+
+    def _ensure_keypress_event_file(self) -> None:
+        """Ensure ~/.cache/8bitdo-micro/last_keypress.json exists for Quickshell FileView watches."""
+        if self.keypress_event_path is None:
+            return
+        try:
+            self.keypress_event_path.parent.mkdir(parents=True, exist_ok=True)
+            if not self.keypress_event_path.exists():
+                self.keypress_event_path.write_text('{"seq": 0}\n', encoding="utf-8")
+        except Exception:
+            pass
+
+    @staticmethod
+    def _order_combo_buttons(combo_set: frozenset[str] | list[str]) -> list[str]:
+        priority = {
+            "L2": 0, "R2": 1, "L": 2, "R": 3,
+            "SELECT": 4, "START": 5, "STAR": 6, "HOME": 7,
+            "UP": 8, "DOWN": 9, "LEFT": 10, "RIGHT": 11,
+            "X": 12, "Y": 13, "A": 14, "B": 15,
+        }
+        return sorted(combo_set, key=lambda b: (priority.get(b, 99), b))
+
+    def _record_key_event(
+        self,
+        buttons: list[str],
+        action: ButtonAction,
+        *,
+        is_combo: bool = False,
+    ) -> None:
+        """Write live keypress metadata in-place for the OmaBoy OSD overlay."""
+        if self.keypress_event_path is None:
+            return
+        if not action.exec_cmd and not action.evdev_codes:
+            return
+        self._event_seq += 1
+        clean_buttons = [b for b in buttons if b]
+        raw_key = f"exec:{action.exec_cmd}" if action.exec_cmd else "+".join(action.keys)
+        payload = {
+            "seq": self._event_seq,
+            "timestamp": round(time.time(), 3),
+            "button": "+".join(clean_buttons),
+            "buttons": clean_buttons,
+            "key": raw_key,
+            "description": action.description or "",
+            "profile": self.active_profile.name,
+            "turn": self.active_profile.turn,
+            "is_combo": is_combo,
+            "is_global_layer": "L2" in clean_buttons and is_combo,
+        }
+        try:
+            with open(self.keypress_event_path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False)
+                fh.write("\n")
+        except Exception as exc:
+            logger.debug("Failed to write keypress OSD event: %s", exc)
 
     def _create_background_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any] | None:
         """Spawn a background coroutine with a strong reference held until completion."""
@@ -268,7 +332,18 @@ class FocusSwitchDaemon:
         except Exception as exc:
             logger.warning("exec command %r failed: %s", cmd, exc)
 
-    def _emit_solo_down(self, ui: VirtualKeyboard | Any, keycode: int, action: ButtonAction) -> None:
+    def _emit_solo_down(
+        self,
+        ui: VirtualKeyboard | Any,
+        keycode: int,
+        action: ButtonAction,
+        button_name: str = "",
+    ) -> None:
+        if not button_name:
+            raw_btn = FACTORY_EVDEV_TO_BUTTON.get(keycode, "")
+            button_name = rotate_dpad_button(raw_btn, self.active_profile.turn) if raw_btn else ""
+        if button_name:
+            self._record_key_event([button_name], action, is_combo=False)
         if action.exec_cmd:
             self._create_background_task(self._spawn_exec(action.exec_cmd))
         if action.evdev_codes:
@@ -285,7 +360,7 @@ class FocusSwitchDaemon:
         if keycode not in self._physical_held_buttons:
             return
         if pending.action is not None:
-            self._emit_solo_down(ui, pending.keycode, pending.action)
+            self._emit_solo_down(ui, pending.keycode, pending.action, pending.button_name)
 
     def handle_key_event(self, ui: VirtualKeyboard | Any, keycode: int, value: int) -> None:
         """Process a single EV_KEY event (value: 0=up, 1=down, 2=hold) and emit to UInput."""
@@ -299,6 +374,7 @@ class FocusSwitchDaemon:
                 if pending.timer_handle is not None:
                     pending.timer_handle.cancel()
                 if pending.action is not None:
+                    self._record_key_event([pending.button_name], pending.action, is_combo=False)
                     if pending.action.exec_cmd:
                         self._create_background_task(self._spawn_exec(pending.action.exec_cmd))
                     if pending.action.evdev_codes:
@@ -348,7 +424,7 @@ class FocusSwitchDaemon:
                 if pending.timer_handle is not None:
                     pending.timer_handle.cancel()
                 if pending.action is not None:
-                    self._emit_solo_down(ui, pending.keycode, pending.action)
+                    self._emit_solo_down(ui, pending.keycode, pending.action, pending.button_name)
                     if pending.action.evdev_codes:
                         ui.write(ecodes.EV_KEY, pending.action.evdev_codes[-1], 2)
                         ui.syn()
@@ -380,7 +456,7 @@ class FocusSwitchDaemon:
         if not combos:
             action = self.active_profile.buttons.get(logical_btn)
             if action is not None:
-                self._emit_solo_down(ui, keycode, action)
+                self._emit_solo_down(ui, keycode, action, logical_btn)
             return
 
         # Check if logical_btn participates in ANY defined combo in this profile
@@ -388,7 +464,7 @@ class FocusSwitchDaemon:
         if logical_btn not in combo_buttons:
             action = self.active_profile.buttons.get(logical_btn)
             if action is not None:
-                self._emit_solo_down(ui, keycode, action)
+                self._emit_solo_down(ui, keycode, action, logical_btn)
             return
 
         # Check if pressing this button completes a combo with either:
@@ -434,6 +510,7 @@ class FocusSwitchDaemon:
 
             # 3. Emit the combo action
             combo_act = combos[matched_combo]
+            self._record_key_event(self._order_combo_buttons(matched_combo), combo_act, is_combo=True)
             if combo_act.exec_cmd:
                 self._create_background_task(self._spawn_exec(combo_act.exec_cmd))
             if combo_act.evdev_codes:
@@ -468,7 +545,7 @@ class FocusSwitchDaemon:
         else:
             # Synchronous fallback if no running event loop
             if single_act is not None:
-                self._emit_solo_down(ui, keycode, single_act)
+                self._emit_solo_down(ui, keycode, single_act, logical_btn)
 
     def _cleanup_held_keys_on_disconnect(self, ui: Any) -> None:
         """Release any held keys and combos on disconnect so nothing sticks."""
