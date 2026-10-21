@@ -292,6 +292,18 @@ description = "Global shortcuts inherited by all profiles unless overridden"
 [profiles.global.combos]
 "L+R" = ["Super", "K"]               # Command palette / app launcher
 "Select+Start" = "exec:hyprctl dispatch togglespecialworkspace" # Toggle scratchpad
+"L2+UP" = ["LEFTMETA", "F"]          # Fullscreen window
+"L2+DOWN" = ["LEFTMETA", "T"]        # Toggle floating / tiling
+"L2+LEFT" = ["LEFTMETA", "LEFT"]     # Focus window left
+"L2+RIGHT" = ["LEFTMETA", "RIGHT"]   # Focus window right
+"L2+Y" = "exec:omarchy-launch-or-focus-webapp YouTube https://youtube.com/" # Focus/Open YouTube
+"L2+A" = "exec:omarchy-launch-or-focus ghostty omarchy-launch-terminal"     # Focus/Open Terminal
+"L2+X" = "exec:omarchy-launch-or-focus-webapp 'Google Photos' https://photos.google.com/" # Focus/Open Google Photos
+"L2+B" = ["LEFTMETA", "SPACE"]       # Omarchy Menu / Launcher
+"L2+L" = ["LEFTMETA", "TAB"]         # Next workspace
+"L2+R" = "F9"                        # Whisper voice dictation
+"L2+SELECT" = ["LEFTMETA", "W"]      # Close active window
+"L2+START" = "exec:omarchy-shell shell toggle dinuphan.omaboy" # Toggle OmaBoy HUD panel
 
 [profiles.agy]
 description = "Antigravity (agy) / Terminal Coding Profile (captured from controller)"
@@ -302,24 +314,25 @@ turn = 0
 [profiles.agy.combos]
 # Simultaneous button chords: pressing both buttons within 40ms emits this action instead of solo keys
 "L+R" = ["LEFTMETA", "K"]             # Command palette
+"L2+R2" = ["LEFTSHIFT", "TAB"]        # Auto-approve file-edits
 
 [profiles.agy.buttons]
 A = "BACKSPACE"                  # Backspace / Delete
 B = "PAGEDOWN"                   # Page down
 X = "PAGEUP"                     # Page up
 Y = ["LEFTSHIFT", "ENTER"]       # Multiline newline
-L = "TAB"                        # Tab completion
-R = ["LEFTCTRL", "LEFTSHIFT", "D"] # Debug / duplicate
-L2 = "LEFTSHIFT"                 # Shift modifier
+L = "TAB"                        # Tab completion / switch mode
+R = ["LEFTCTRL", "LEFTSHIFT", "D"] # Toggle voice / debug mode
+L2 = "LEFTSHIFT"                 # Shift / Global combo modifier
 R2 = "ENTER"                     # Submit prompt
-SELECT = "ESC"                   # Cancel / Normal mode
+SELECT = "ESC"                   # Cancel / Escape
 START = ["2", "LEFTSHIFT"]       # @ file mention
 STAR = "SPACE"                   # Space
 HOME = "SLASH"                   # / command
-UP = "UP"
-DOWN = "DOWN"
-LEFT = "LEFT"
-RIGHT = "RIGHT"
+UP = "UP"                        # Up / Previous history
+DOWN = "DOWN"                    # Down / Next history
+LEFT = "LEFT"                    # Cursor left
+RIGHT = "RIGHT"                  # Cursor right
 
 [profiles.anki]
 description = "Anki Flashcards (matches official 8BitDo Anki preset)"
@@ -330,18 +343,18 @@ turn = 0
 [profiles.anki.buttons]
 A = "2"                          # Good
 B = "1"                          # Again
-X = ["LEFTCTRL", "LEFTSHIFT", "D"]
-Y = ["LEFTCTRL", "LEFTALT", "N"]
+X = ["LEFTCTRL", "LEFTSHIFT", "D"] # Change deck
+Y = ["LEFTCTRL", "LEFTALT", "N"] # Add note
 L = "SPACE"                      # Show answer
 R = "4"                          # Easy
-L2 = "L"
-R2 = "R"
+L2 = "L"                         # Global combo modifier
+R2 = "R"                         # Replay audio
 SELECT = "E"                     # Edit card
 START = "KPASTERISK"             # Mark card
-STAR = "T"
-HOME = "S"
-UP = ["LEFTCTRL", "DELETE"]
-DOWN = ["LEFTSHIFT", "2"]
+STAR = "T"                       # Stats
+HOME = "S"                       # Study deck
+UP = ["LEFTCTRL", "DELETE"]      # Delete note
+DOWN = ["LEFTSHIFT", "2"]        # Suspend card
 LEFT = ["LEFTCTRL", "Z"]         # Undo
 RIGHT = "KPMINUS"                # Bury card
 
@@ -355,6 +368,12 @@ match_class = '^(firefox|brave-browser|chromium|google-chrome|zen|vivaldi-stable
 match_title = ".*(YouTube|- YouTube).*"
 turn = 0
 
+[profiles.youtube.combos]
+"L+R" = ["LEFTSHIFT", "N"]       # Next video
+"SELECT+START" = "M"             # Mute / Unmute video
+"SELECT+UP" = "PAGEUP"           # Scroll page up while browsing
+"SELECT+DOWN" = "PAGEDOWN"       # Scroll page down while browsing
+
 [profiles.youtube.buttons]
 A = "SPACE"                      # Play / Pause
 B = "M"                          # Mute audio
@@ -364,10 +383,10 @@ L = "J"                          # Seek backward 10s
 R = "L"                          # Seek forward 10s
 L2 = ["LEFTSHIFT", "COMMA"]      # Slow down playback
 R2 = ["LEFTSHIFT", "DOT"]        # Speed up playback
-SELECT = "ESC"                   # Exit Fullscreen
-START = ["LEFTSHIFT", "N"]       # Next video
-STAR = "T"                       # Cinema theater mode
-HOME = "I"                       # Miniplayer
+SELECT = "ESC"                   # Unfocus search / Exit Fullscreen
+START = "F9"                     # Whisper voice dictation
+STAR = "SLASH"                   # Focus search bar (/)
+HOME = ["LEFTALT", "LEFT"]       # Navigate back to results
 UP = "UP"                        # Volume up
 DOWN = "DOWN"                    # Volume down
 LEFT = "LEFT"                    # Seek -5s
@@ -379,22 +398,22 @@ match_class = "^(firefox|brave-browser|chromium|google-chrome|zen|vivaldi-stable
 turn = 0
 
 [profiles.browser.buttons]
-A = "SPACE"
-B = "PAGEDOWN"
-X = "PAGEUP"
-Y = ["LEFTCTRL", "T"]
-L = ["LEFTCTRL", "PGUP"]
-R = ["LEFTCTRL", "PGDN"]
-L2 = ["LEFTALT", "LEFT"]
-R2 = ["LEFTALT", "RIGHT"]
-SELECT = ["LEFTCTRL", "W"]
-START = ["LEFTCTRL", "SHIFT", "T"]
-STAR = "F5"
-HOME = "ESC"
-UP = "UP"
-DOWN = "DOWN"
-LEFT = "LEFT"
-RIGHT = "RIGHT"
+A = "SPACE"                      # Scroll down / Activate
+B = "PAGEDOWN"                   # Page down
+X = "PAGEUP"                     # Page up
+Y = ["LEFTCTRL", "T"]            # New tab
+L = ["LEFTCTRL", "PGUP"]         # Previous tab
+R = ["LEFTCTRL", "PGDN"]         # Next tab
+L2 = ["LEFTALT", "LEFT"]         # History back
+R2 = ["LEFTALT", "RIGHT"]        # History forward
+SELECT = ["LEFTCTRL", "W"]       # Close tab
+START = ["LEFTCTRL", "SHIFT", "T"] # Reopen closed tab
+STAR = "F5"                      # Reload page
+HOME = "ESC"                     # Stop / Unfocus
+UP = "UP"                        # Scroll up
+DOWN = "DOWN"                    # Scroll down
+LEFT = "LEFT"                    # Scroll left
+RIGHT = "RIGHT"                  # Scroll right
 
 [profiles.media]
 description = "Video / Media Player (mpv, VLC)"
@@ -402,22 +421,22 @@ match_class = "^(mpv|vlc)$"
 turn = 0
 
 [profiles.media.buttons]
-A = "SPACE"
-B = "F"
-X = "M"
-Y = "S"
-L = "LEFTBRACE"
-R = "RIGHTBRACE"
-L2 = "9"
-R2 = "0"
-SELECT = "ESC"
-START = "ENTER"
-STAR = "J"
-HOME = "O"
-UP = "UP"
-DOWN = "DOWN"
-LEFT = "LEFT"
-RIGHT = "RIGHT"
+A = "SPACE"                      # Play / Pause
+B = "F"                          # Toggle Fullscreen
+X = "M"                          # Mute audio
+Y = "S"                          # Screenshot
+L = "LEFTBRACE"                  # Speed down
+R = "RIGHTBRACE"                 # Speed up
+L2 = "9"                         # Volume down
+R2 = "0"                         # Volume up
+SELECT = "ESC"                   # Exit Fullscreen
+START = "ENTER"                  # Next playlist item
+STAR = "J"                       # Cycle subtitles
+HOME = "O"                       # Show OSD progress
+UP = "UP"                        # Seek +1m
+DOWN = "DOWN"                    # Seek -1m
+LEFT = "LEFT"                    # Seek -5s
+RIGHT = "RIGHT"                  # Seek +5s
 
 [profiles.factory]
 description = "Factory K-Mode Default (c..t unique single keys)"

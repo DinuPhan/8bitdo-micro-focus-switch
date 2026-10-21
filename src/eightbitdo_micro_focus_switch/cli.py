@@ -341,14 +341,13 @@ async def _cmd_daemon(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_install_service(args: argparse.Namespace) -> int:
-    cfg_path = ensure_default_config(getattr(args, "config", None))
+def _write_systemd_service_unit(cfg_path: Path, backend: str | None = None) -> Path:
     exe = shutil.which("8bitdo-micro-focus-switch") or str(Path(sys.argv[0]).resolve())
     service_dir = Path.home() / ".config" / "systemd" / "user"
     service_dir.mkdir(parents=True, exist_ok=True)
     service_path = service_dir / "8bitdo-micro-focus-switch.service"
 
-    backend_arg = f" --backend {args.backend}" if args.backend else ""
+    backend_arg = f" --backend {backend}" if backend else ""
     unit_text = f"""\
 [Unit]
 Description=8BitDo Micro Focus-Aware Input Remapper Daemon (Hyprland)
@@ -364,19 +363,53 @@ RestartSec=2
 WantedBy=default.target
 """
     service_path.write_text(unit_text, encoding="utf-8")
-    print("=== 8BitDo Micro systemd User Service Setup (Situational) ===")
-    print("When is this needed?")
-    print("  • Optional / Situational: Use this only if you want the focus-aware daemon to start")
-    print("    automatically in the background on desktop login.")
-    print("  • Not needed if you prefer running `8bitdo-micro-focus-switch daemon` manually in a terminal.")
-    print(f"\nWrote systemd user unit: {service_path}")
-    print("\nTo enable and start the service:")
-    print("  systemctl --user daemon-reload")
-    print("  systemctl --user enable --now 8bitdo-micro-focus-switch.service")
+    return service_path
+
+
+def _enable_and_start_systemd_service() -> tuple[bool, str]:
+    if not shutil.which("systemctl"):
+        return False, "systemctl not found"
+    try:
+        subprocess.run(
+            ["systemctl", "--user", "daemon-reload"],
+            capture_output=True,
+            check=False,
+        )
+        was_active = is_systemd_service_active()
+        res_en = subprocess.run(
+            ["systemctl", "--user", "enable", "--now", "8bitdo-micro-focus-switch.service"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if was_active:
+            subprocess.run(
+                ["systemctl", "--user", "restart", "8bitdo-micro-focus-switch.service"],
+                capture_output=True,
+                check=False,
+            )
+        if res_en.returncode == 0 or is_systemd_service_active():
+            return True, "Enabled and started 8bitdo-micro-focus-switch.service"
+        err = (res_en.stderr or res_en.stdout or "").strip()
+        return False, err or f"systemctl exited with code {res_en.returncode}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _cmd_install_service(args: argparse.Namespace) -> int:
+    cfg_path = ensure_default_config(getattr(args, "config", None))
+    service_path = _write_systemd_service_unit(cfg_path, getattr(args, "backend", None))
+    print(f"✓ Wrote systemd user unit: {service_path}")
+    ok, msg = _enable_and_start_systemd_service()
+    if ok:
+        print(f"✓ {msg}")
+    else:
+        print(f"ℹ Could not auto-start systemd service ({msg}). To start manually:")
+        print("  systemctl --user daemon-reload && systemctl --user enable --now 8bitdo-micro-focus-switch.service")
 
     uinput_ok, _ = check_uinput_access()
     if not uinput_ok:
-        print("\nNOTE: For multi-button combos or instant <1ms remapping, run the udev setup:")
+        print("\nNOTE: For multi-button combos or instant <1ms remapping, run:")
         print("  8bitdo-micro-focus-switch install-udev")
     return 0
 
@@ -385,18 +418,9 @@ def _cmd_install_udev(args: argparse.Namespace) -> int:
     uinput_ok, msg = check_uinput_access()
     if uinput_ok:
         print("✓ /dev/uinput is already accessible and writable by your user!")
-        print("  (Your user is in group 'input' and udev permissions are active)")
         return 0
 
-    print("=== 8BitDo Micro udev Setup (Situational) ===")
-    print("When is this needed?")
-    print("  • REQUIRED only when you use multi-button combos/chords (e.g. L1+R1 -> Super+K).")
-    print("  • REQUIRED only when you use shell commands (exec: ...) or instant <1ms uinput remapping.")
-    print("  • NOT needed if you only use direct BLE hardware flashing ('ble write') for standalone use.")
-    print(f"\nTarget rule path : {UDEV_RULE_PATH}")
-    print(f"Rule content     : {UDEV_RULE_CONTENT.strip()}\n")
-    print("Attempting to write udev rule with sudo...")
-
+    print(f"Installing udev rule for /dev/uinput -> {UDEV_RULE_PATH} ...")
     cmd = (
         f"echo '{UDEV_RULE_CONTENT.strip()}' | sudo tee {UDEV_RULE_PATH} > /dev/null "
         "&& sudo udevadm control --reload-rules "
@@ -407,11 +431,10 @@ def _cmd_install_udev(args: argparse.Namespace) -> int:
         if res.returncode == 0:
             ok, msg = check_uinput_access()
             if ok:
-                print("\n✓ Successfully granted /dev/uinput permissions to group 'input'!")
+                print("✓ Granted /dev/uinput permissions!")
                 return 0
-            else:
-                print(f"\nRule installed, but: {msg}")
-                return 0
+            print(f"✓ Rule installed ({msg})")
+            return 0
     except Exception as exc:
         print(f"Failed to invoke sudo: {exc}")
 
@@ -419,6 +442,31 @@ def _cmd_install_udev(args: argparse.Namespace) -> int:
     print(f"  echo '{UDEV_RULE_CONTENT.strip()}' | sudo tee {UDEV_RULE_PATH}")
     print("  sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput")
     return 1
+
+
+def _cmd_setup(args: argparse.Namespace) -> int:
+    """One-step setup: create default config, configure /dev/uinput udev access, and enable/start systemd service."""
+    cfg_path = ensure_default_config(getattr(args, "config", None))
+    cfg = load_config(cfg_path)
+    print(f"✓ Configuration ready: {cfg_path} ({len(cfg.profiles)} profiles, {len(cfg.global_combos)} global combos)")
+
+    if not getattr(args, "skip_udev", False):
+        uinput_ok, _ = check_uinput_access()
+        if uinput_ok:
+            print("✓ /dev/uinput permissions: OK")
+        else:
+            _cmd_install_udev(args)
+
+    if not getattr(args, "skip_service", False):
+        service_path = _write_systemd_service_unit(cfg_path, getattr(args, "backend", None))
+        print(f"✓ Installed systemd user service: {service_path}")
+        ok, msg = _enable_and_start_systemd_service()
+        if ok:
+            print(f"✓ {msg}")
+        else:
+            print(f"ℹ Systemd service written ({msg})")
+
+    return 0
 
 
 def is_systemd_service_active() -> bool:
@@ -1191,10 +1239,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="[Daily] Reload profiles.toml into the running daemon (zero downtime)",
     )
 
+    # setup / install / init
+    p_setup = sub.add_parser(
+        "setup",
+        aliases=["install", "init"],
+        parents=[common_parser],
+        help="[One-Step Setup] Create default profiles.toml, install udev rule, and enable/start systemd service",
+    )
+    p_setup.add_argument(
+        "--backend",
+        choices=("uinput", "host", "ble", "hybrid"),
+        default=None,
+        help="Backend flag to bake into the systemd service",
+    )
+    p_setup.add_argument(
+        "--skip-udev",
+        action="store_true",
+        help="Skip /dev/uinput udev rule check/installation",
+    )
+    p_setup.add_argument(
+        "--skip-service",
+        action="store_true",
+        help="Skip systemd --user service installation and startup",
+    )
+
     # install-service
     p_svc = sub.add_parser(
         "install-service",
-        help="[Situational Setup] Generate systemd --user service to auto-start daemon on login (optional)",
+        parents=[common_parser],
+        help="Generate and enable systemd --user service to auto-start daemon on login",
     )
     p_svc.add_argument(
         "--backend",
@@ -1206,7 +1279,7 @@ def build_parser() -> argparse.ArgumentParser:
     # install-udev
     sub.add_parser(
         "install-udev",
-        help="[Situational Setup] Install /dev/uinput udev rule (REQUIRED only for combos, exec:, or uinput mode)",
+        help="Install /dev/uinput udev rule",
     )
 
     # show / hud / diagram
@@ -1283,6 +1356,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_keys(args)
         if args.command == "reload":
             return _cmd_reload(args)
+        if args.command in ("setup", "install", "init"):
+            return _cmd_setup(args)
         if args.command == "install-service":
             return _cmd_install_service(args)
         if args.command == "install-udev":

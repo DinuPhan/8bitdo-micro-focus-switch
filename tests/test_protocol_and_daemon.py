@@ -374,16 +374,16 @@ def test_daemon_combos_and_chording_mechanics(tmp_path: Path) -> None:
         daemon._on_focus_change(ActiveWindow(window_class="ghostty", window_title="agy terminal"))
         assert daemon.active_profile.name == "agy"
 
-        # 1. Non-combo button (A -> BACKSPACE) has ZERO delay (emits immediately)
-        daemon.handle_key_event(ui, ecodes.KEY_G, 1)
+        # 1. Non-combo button (STAR -> SPACE) has ZERO delay (emits immediately)
+        daemon.handle_key_event(ui, ecodes.KEY_T, 1)
         assert ui.events == [
-            (ecodes.EV_KEY, ecodes.KEY_BACKSPACE, 1),
+            (ecodes.EV_KEY, ecodes.KEY_SPACE, 1),
             (ecodes.EV_SYN, 0, 0),
         ]
         ui.events.clear()
-        daemon.handle_key_event(ui, ecodes.KEY_G, 0)
+        daemon.handle_key_event(ui, ecodes.KEY_T, 0)
         assert ui.events == [
-            (ecodes.EV_KEY, ecodes.KEY_BACKSPACE, 0),
+            (ecodes.EV_KEY, ecodes.KEY_SPACE, 0),
             (ecodes.EV_SYN, 0, 0),
         ]
         ui.events.clear()
@@ -1768,6 +1768,24 @@ Right = "RIGHT"
 
     import asyncio
     asyncio.run(_run_async_test())
+
+
+def test_cli_setup_one_step(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from eightbitdo_micro_focus_switch import cli
+
+    cfg_file = tmp_path / "profiles.toml"
+    monkeypatch.setattr(cli, "check_uinput_access", lambda: (True, "ok"))
+    monkeypatch.setattr(cli, "_write_systemd_service_unit", lambda cfg, backend=None: tmp_path / "8bitdo-micro-focus-switch.service")
+    monkeypatch.setattr(cli, "_enable_and_start_systemd_service", lambda: (True, "Enabled and started 8bitdo-micro-focus-switch.service"))
+
+    rc = cli.main(["setup", "-c", str(cfg_file)])
+    assert rc == 0
+    assert cfg_file.exists()
+    out = capsys.readouterr().out
+    assert "Configuration ready:" in out
+    assert "14 global combos" in out
+    assert "/dev/uinput permissions: OK" in out
+    assert "Enabled and started 8bitdo-micro-focus-switch.service" in out
 
 
 

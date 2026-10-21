@@ -47,14 +47,13 @@ Out of the box, `8bitdo-micro-focus-switch` comes configured with handy defaults
 
 ## Quick Start
 
-### 1. Installation
+### 1. Installation & One-Step Setup
 
-Requires Python 3.11+. Install using [`uv`](https://github.com/astral-sh/uv) or `pip`:
+Requires Python 3.11+. Install using [`uv`](https://github.com/astral-sh/uv) (or `pip`) and run `setup` to automatically create the default `profiles.toml`, configure `/dev/uinput` permissions, and enable + start the background systemd service:
 
 ```bash
-git clone https://github.com/DinuPhan/8bitdo-micro-focus-switch.git
-cd 8bitdo-micro-focus-switch
-uv pip install -e .
+uv tool install git+https://github.com/DinuPhan/8bitdo-micro-focus-switch.git
+8bitdo-micro-focus-switch setup
 ```
 
 ### 2. Connect Your Controller (Bluetooth Keyboard Mode)
@@ -349,27 +348,19 @@ If you prefer to flash a profile directly into the 8BitDo Micro's onboard memory
 
 ---
 
-## Setup & Situational Commands
+## Setup Commands
 
-These commands are only needed for one-time environment setup:
-
-### 1. `install-udev` (One-time setup for Combos / uinput mode on Linux)
+### `setup` (All-in-One Setup)
 
 ```bash
-8bitdo-micro-focus-switch install-udev
+8bitdo-micro-focus-switch setup
 ```
 
-- **REQUIRED** if you use multi-button combos/chords (e.g., `L1 + R1 -> Super + K`) or instant `<1ms` software focus remapping via `/dev/uinput`.
-- **NOT needed** if you only use direct BLE hardware flashing (`8bitdo-micro-focus-switch ble write <profile>`).
+Automatically creates `~/.config/8bitdo-micro/profiles.toml` (with built-in app profiles and global Omarchy chords), installs the `/dev/uinput` udev rule if needed, and enables + starts `8bitdo-micro-focus-switch.service` via `systemd --user`.
 
-### 2. `install-service` (Auto-start Daemon on Login)
-
-```bash
-# Generate the systemd user unit to start the remapper automatically:
-8bitdo-micro-focus-switch install-service
-systemctl --user daemon-reload
-systemctl --user enable --now 8bitdo-micro-focus-switch.service
-```
+Individual setup steps can also be run separately if needed:
+- `8bitdo-micro-focus-switch install-udev` — install `/dev/uinput` udev rule
+- `8bitdo-micro-focus-switch install-service` — write, enable, and start `8bitdo-micro-focus-switch.service`
 
 ---
 
