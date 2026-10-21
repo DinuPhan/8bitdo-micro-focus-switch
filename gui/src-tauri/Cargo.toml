@@ -1,6 +1,6 @@
 [package]
 name = "eightbitdo-micro-gui"
-version = "0.1.0"
+version = "0.2.0"
 description = "Focus-aware input remapper and visual configurator for the 8BitDo Micro"
 authors = ["Dinu Phan"]
 edition = "2021"
