@@ -44,6 +44,7 @@ from .protocol import (
 from .input_backend import (
     MacOSInputBackend,
     VirtualKeyboard,
+    WaylandVirtualKeyboard,
     WindowsInputBackend,
     check_platform_input_access,
     create_virtual_keyboard,
@@ -579,9 +580,40 @@ class FocusSwitchDaemon:
 
     async def _evdev_loop(self) -> None:
         """Continuously attach to the 8BitDo Micro input device, grab it, and remap events on Linux."""
-        uinput_dev = self._create_uinput()
-        ui = create_virtual_keyboard(uinput_dev)
-        logger.info("Created virtual keyboard: %s", VIRTUAL_DEVICE_NAME)
+        import shutil
+
+        ui: VirtualKeyboard | None = None
+        ok, msg = check_uinput_access()
+        if ok:
+            try:
+                uinput_dev = self._create_uinput()
+                ui = create_virtual_keyboard(uinput_dev)
+                logger.info("Created virtual keyboard: %s (/dev/uinput)", VIRTUAL_DEVICE_NAME)
+            except Exception as exc:
+                ok = False
+                msg = str(exc)
+
+        if ui is None:
+            wtype_bin = shutil.which("wtype")
+            if wtype_bin:
+                ui = WaylandVirtualKeyboard(wtype_bin)
+                logger.info(
+                    "Using user-space Wayland virtual keyboard (%s) fallback (zero sudo / no /dev/uinput needed)",
+                    wtype_bin,
+                )
+            else:
+                while True:
+                    ok, msg = check_uinput_access()
+                    if ok:
+                        try:
+                            uinput_dev = self._create_uinput()
+                            ui = create_virtual_keyboard(uinput_dev)
+                            logger.info("Created virtual keyboard: %s", VIRTUAL_DEVICE_NAME)
+                            break
+                        except Exception as exc:
+                            msg = str(exc)
+                    logger.warning("Waiting for /dev/uinput access (%s) ...", msg)
+                    await asyncio.sleep(3.0)
         try:
             while True:
                 devices = find_micro_input_devices()
@@ -719,9 +751,10 @@ class FocusSwitchDaemon:
         tasks.append(asyncio.create_task(_focus_task()))
 
         if self.backend in ("uinput", "host", "hybrid"):
-            ok, msg = check_platform_input_access()
-            if not ok:
-                raise PermissionError(msg)
+            if sys.platform != "linux":
+                ok, msg = check_platform_input_access()
+                if not ok:
+                    raise PermissionError(msg)
             tasks.append(asyncio.create_task(self._host_input_loop()))
 
             if sys.platform in ("win32", "darwin"):

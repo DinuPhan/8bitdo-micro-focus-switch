@@ -47,6 +47,7 @@ UDEV_RULE_CONTENT = (
     'KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", '
     'OPTIONS+="static_node=uinput", TAG+="uaccess"\n'
 )
+MODULES_LOAD_PATH = Path("/etc/modules-load.d/99-8bitdo-micro-uinput.conf")
 
 
 def _format_profile_table(config_path: Path) -> str:
@@ -133,6 +134,9 @@ async def _cmd_status(args: argparse.Namespace) -> int:
         d.close()
 
     uinput_ok, uinput_msg = check_uinput_access()
+    if not uinput_ok and shutil.which("wtype"):
+        uinput_ok = True
+        uinput_msg = "Wayland user-space virtual keyboard (wtype fallback active; no /dev/uinput required)"
 
     if getattr(args, "json", False):
         def _action_dict(act: object) -> dict[str, object]:
@@ -352,11 +356,12 @@ def _write_systemd_service_unit(cfg_path: Path, backend: str | None = None) -> P
 [Unit]
 Description=8BitDo Micro Focus-Aware Input Remapper Daemon (Hyprland)
 After=graphical-session.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart={exe} daemon --config {cfg_path}{backend_arg}
-Restart=on-failure
+ExecStart={exe} daemon --config {cfg_path} --ensure-factory-ble{backend_arg}
+Restart=always
 RestartSec=2
 
 [Install]
@@ -372,6 +377,11 @@ def _enable_and_start_systemd_service() -> tuple[bool, str]:
     try:
         subprocess.run(
             ["systemctl", "--user", "daemon-reload"],
+            capture_output=True,
+            check=False,
+        )
+        subprocess.run(
+            ["systemctl", "--user", "reset-failed", "8bitdo-micro-focus-switch.service"],
             capture_output=True,
             check=False,
         )
@@ -416,22 +426,24 @@ def _cmd_install_service(args: argparse.Namespace) -> int:
 
 def _cmd_install_udev(args: argparse.Namespace) -> int:
     uinput_ok, msg = check_uinput_access()
-    if uinput_ok:
-        print("✓ /dev/uinput is already accessible and writable by your user!")
+    if uinput_ok and MODULES_LOAD_PATH.exists():
+        print("✓ /dev/uinput is already accessible and configured to load on boot!")
         return 0
 
-    print(f"Installing udev rule for /dev/uinput -> {UDEV_RULE_PATH} ...")
+    print(f"Configuring /dev/uinput udev rule ({UDEV_RULE_PATH}) and boot module ({MODULES_LOAD_PATH}) ...")
     cmd = (
         f"echo '{UDEV_RULE_CONTENT.strip()}' | sudo tee {UDEV_RULE_PATH} > /dev/null "
+        f"&& echo 'uinput' | sudo tee {MODULES_LOAD_PATH} > /dev/null "
+        "&& sudo modprobe uinput "
         "&& sudo udevadm control --reload-rules "
-        "&& sudo udevadm trigger /dev/uinput"
+        "&& sudo udevadm trigger --sysname-match=uinput"
     )
     try:
         res = subprocess.run(["sudo", "sh", "-c", cmd])
         if res.returncode == 0:
             ok, msg = check_uinput_access()
             if ok:
-                print("✓ Granted /dev/uinput permissions!")
+                print("✓ Granted /dev/uinput permissions and enabled uinput module on boot!")
                 return 0
             print(f"✓ Rule installed ({msg})")
             return 0
@@ -440,7 +452,8 @@ def _cmd_install_udev(args: argparse.Namespace) -> int:
 
     print("\nPlease run the following command in your terminal with sudo:")
     print(f"  echo '{UDEV_RULE_CONTENT.strip()}' | sudo tee {UDEV_RULE_PATH}")
-    print("  sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput")
+    print(f"  echo 'uinput' | sudo tee {MODULES_LOAD_PATH} && sudo modprobe uinput")
+    print("  sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput")
     return 1
 
 
@@ -454,6 +467,8 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         uinput_ok, _ = check_uinput_access()
         if uinput_ok:
             print("✓ /dev/uinput permissions: OK")
+        elif shutil.which("wtype") and not sys.stdin.isatty():
+            print("✓ Wayland user-space virtual keyboard (wtype) available (no sudo required)")
         else:
             _cmd_install_udev(args)
 

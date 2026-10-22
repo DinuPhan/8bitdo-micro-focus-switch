@@ -74,6 +74,185 @@ class LinuxVirtualKeyboard:
 
 
 # ---------------------------------------------------------------------------
+# Linux User-Space Wayland Virtual Keyboard (wtype / zwp_virtual_keyboard_v1)
+# ---------------------------------------------------------------------------
+
+WAYLAND_MODIFIER_MAP: dict[str, str] = {
+    "LEFTCTRL": "ctrl",
+    "RIGHTCTRL": "ctrl",
+    "LEFTSHIFT": "shift",
+    "RIGHTSHIFT": "shift",
+    "LEFTALT": "alt",
+    "RIGHTALT": "altgr",
+    "LEFTMETA": "logo",
+    "RIGHTMETA": "logo",
+    "CAPSLOCK": "capslock",
+}
+
+WAYLAND_KEYSYM_MAP: dict[str, str] = {
+    "ENTER": "Return",
+    "ESC": "Escape",
+    "BACKSPACE": "BackSpace",
+    "TAB": "Tab",
+    "SPACE": "space",
+    "MINUS": "minus",
+    "EQUAL": "equal",
+    "LEFTBRACE": "bracketleft",
+    "RIGHTBRACE": "bracketright",
+    "BACKSLASH": "backslash",
+    "SEMICOLON": "semicolon",
+    "APOSTROPHE": "apostrophe",
+    "GRAVE": "grave",
+    "COMMA": "comma",
+    "DOT": "period",
+    "SLASH": "slash",
+    "CAPSLOCK": "Caps_Lock",
+    "SYSRQ": "Print",
+    "SCROLLLOCK": "Scroll_Lock",
+    "PAUSE": "Pause",
+    "INSERT": "Insert",
+    "HOME": "Home",
+    "PAGEUP": "Page_Up",
+    "DELETE": "Delete",
+    "END": "End",
+    "PAGEDOWN": "Page_Down",
+    "RIGHT": "Right",
+    "LEFT": "Left",
+    "DOWN": "Down",
+    "UP": "Up",
+    "NUMLOCK": "Num_Lock",
+    "KPSLASH": "KP_Divide",
+    "KPASTERISK": "KP_Multiply",
+    "KPMINUS": "KP_Subtract",
+    "KPPLUS": "KP_Add",
+    "KPENTER": "KP_Enter",
+    "KP1": "KP_1",
+    "KP2": "KP_2",
+    "KP3": "KP_3",
+    "KP4": "KP_4",
+    "KP5": "KP_5",
+    "KP6": "KP_6",
+    "KP7": "KP_7",
+    "KP8": "KP_8",
+    "KP9": "KP_9",
+    "KP0": "KP_0",
+    "KPDOT": "KP_Decimal",
+    "COMPOSE": "Menu",
+}
+
+WAYLAND_EXTRA_EVDEV_KEYSYMS: dict[int, str] = {
+    113: "XF86AudioMute",
+    114: "XF86AudioLowerVolume",
+    115: "XF86AudioRaiseVolume",
+    163: "XF86AudioNext",
+    164: "XF86AudioPlay",
+    165: "XF86AudioPrev",
+}
+
+
+class WaylandVirtualKeyboard:
+    """User-space Wayland virtual keyboard using `wtype` (zwp_virtual_keyboard_v1).
+
+    Requires zero root/sudo permissions and no /dev/uinput kernel module.
+    """
+
+    def __init__(self, wtype_bin: str = "wtype") -> None:
+        self._wtype_bin = wtype_bin
+        self._pending: list[tuple[int, int]] = []
+        self._held_modifier_codes: dict[int, str] = {}
+        self._closed = False
+        self.sent_history: list[tuple[int, int]] = []
+        self.command_history: list[list[str]] = []
+
+    @staticmethod
+    def evdev_to_keysym(evdev_code: int) -> str | None:
+        if evdev_code in WAYLAND_EXTRA_EVDEV_KEYSYMS:
+            return WAYLAND_EXTRA_EVDEV_KEYSYMS[evdev_code]
+        spec = KEY_BY_EVDEV.get(evdev_code)
+        if spec is None:
+            return None
+        if spec.name in WAYLAND_KEYSYM_MAP:
+            return WAYLAND_KEYSYM_MAP[spec.name]
+        if len(spec.name) == 1:
+            return spec.name.lower()
+        return spec.name
+
+    def write(self, etype: int, evdev_code: int, value: int) -> None:
+        if etype == 1 and not self._closed:
+            self._pending.append((evdev_code, value))
+
+    def build_wtype_args(self, events: list[tuple[int, int]]) -> list[str]:
+        batch_mods: list[str] = []
+        keys_to_tap: list[str] = []
+
+        for code, val in events:
+            spec = KEY_BY_EVDEV.get(code)
+            mod_name = WAYLAND_MODIFIER_MAP.get(spec.name) if spec else None
+            if mod_name is not None:
+                if val in (1, 2):
+                    self._held_modifier_codes[code] = mod_name
+                    if mod_name not in batch_mods:
+                        batch_mods.append(mod_name)
+                elif val == 0:
+                    self._held_modifier_codes.pop(code, None)
+            else:
+                if val in (1, 2):
+                    ks = self.evdev_to_keysym(code)
+                    if ks:
+                        keys_to_tap.append(ks)
+
+        if not keys_to_tap:
+            return []
+
+        active_mods: list[str] = []
+        for m in list(self._held_modifier_codes.values()) + batch_mods:
+            if m not in active_mods:
+                active_mods.append(m)
+
+        args: list[str] = []
+        for m in active_mods:
+            args.extend(["-M", m])
+        for k in keys_to_tap:
+            args.extend(["-k", k])
+        for m in reversed(active_mods):
+            args.extend(["-m", m])
+        return args
+
+    def syn(self) -> None:
+        if not self._pending or self._closed:
+            return
+
+        events_to_send = list(self._pending)
+        self._pending.clear()
+        self.sent_history.extend(events_to_send)
+
+        args = self.build_wtype_args(events_to_send)
+        if not args:
+            return
+
+        cmd = [self._wtype_bin, *args]
+        self.command_history.append(cmd)
+
+        if sys.platform != "linux":
+            return
+
+        import subprocess
+
+        try:
+            subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as exc:
+            logger.debug("WaylandVirtualKeyboard wtype error: %s", exc)
+
+    def close(self) -> None:
+        self._closed = True
+        self._held_modifier_codes.clear()
+
+
+# ---------------------------------------------------------------------------
 # Windows Backend (SendInput + WH_KEYBOARD_LL Hook)
 # ---------------------------------------------------------------------------
 

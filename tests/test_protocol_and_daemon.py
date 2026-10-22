@@ -1788,6 +1788,35 @@ def test_cli_setup_one_step(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cap
     assert "Enabled and started 8bitdo-micro-focus-switch.service" in out
 
 
+def test_wayland_virtual_keyboard_user_space_fallback() -> None:
+    from eightbitdo_micro_focus_switch.input_backend import WaylandVirtualKeyboard
+
+    ui = WaylandVirtualKeyboard(wtype_bin="wtype")
+    # 1. Single key press & release (BACKSPACE = 14)
+    ui.write(1, ecodes.KEY_BACKSPACE, 1)
+    assert ui.build_wtype_args(ui._pending) == ["-k", "BackSpace"]
+    ui._pending.clear()
+    ui.write(1, ecodes.KEY_BACKSPACE, 0)
+    assert ui.build_wtype_args(ui._pending) == []
+    ui._pending.clear()
+
+    # 2. Multi-key chord (LEFTSHIFT + ENTER)
+    ui.write(1, ecodes.KEY_LEFTSHIFT, 1)
+    ui.write(1, ecodes.KEY_ENTER, 1)
+    assert ui.build_wtype_args(ui._pending) == ["-M", "shift", "-k", "Return", "-m", "shift"]
+    ui._pending.clear()
+    ui.write(1, ecodes.KEY_ENTER, 0)
+    ui.write(1, ecodes.KEY_LEFTSHIFT, 0)
+    assert ui.build_wtype_args(ui._pending) == []
+    ui._pending.clear()
+
+    # 3. Compositor Super chord (LEFTMETA + F)
+    ui.write(1, ecodes.KEY_LEFTMETA, 1)
+    ui.write(1, ecodes.KEY_F, 1)
+    assert ui.build_wtype_args(ui._pending) == ["-M", "logo", "-k", "f", "-m", "logo"]
+    ui._pending.clear()
+
+
 
 
 
