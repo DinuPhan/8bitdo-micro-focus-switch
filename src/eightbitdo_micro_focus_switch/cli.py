@@ -360,6 +360,8 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+Environment=OMARCHY_PATH=/usr/share/omarchy
+Environment=PATH=/usr/share/omarchy/bin:{Path.home()}/.local/bin:/usr/local/bin:/usr/bin
 ExecStart={exe} daemon --config {cfg_path} --ensure-factory-ble{backend_arg}
 Restart=always
 RestartSec=2

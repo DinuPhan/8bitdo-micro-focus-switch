@@ -133,6 +133,18 @@ def check_uinput_access() -> tuple[bool, str]:
     return True, "/dev/uinput is writable"
 
 
+def _emit_chord_down(ui: VirtualKeyboard | Any, codes: tuple[int, ...] | list[int]) -> None:
+    for c in codes:
+        ui.write(ecodes.EV_KEY, c, 1)
+    ui.syn()
+
+
+def _emit_chord_up(ui: VirtualKeyboard | Any, codes: tuple[int, ...] | list[int]) -> None:
+    for c in reversed(codes):
+        ui.write(ecodes.EV_KEY, c, 0)
+    ui.syn()
+
+
 class FocusSwitchDaemon:
     """Daemon that watches Hyprland active window focus and remaps 8BitDo Micro inputs."""
 
@@ -324,12 +336,31 @@ class FocusSwitchDaemon:
 
     async def _spawn_exec(self, cmd: str) -> None:
         try:
+            env = dict(os.environ)
+            if "OMARCHY_PATH" not in env and os.path.isdir("/usr/share/omarchy"):
+                env["OMARCHY_PATH"] = "/usr/share/omarchy"
+            paths = [p for p in env.get("PATH", "").split(os.pathsep) if p]
+            for p in ("/usr/share/omarchy/bin", str(Path.home() / ".local" / "bin")):
+                if p not in paths and os.path.isdir(p):
+                    paths.insert(0, p)
+            env["PATH"] = os.pathsep.join(paths)
+
             proc = await asyncio.create_subprocess_shell(
                 cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            await proc.wait()
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                logger.warning(
+                    "exec command %r failed (exit code %d): %s",
+                    cmd,
+                    proc.returncode,
+                    stderr.decode().strip(),
+                )
+            else:
+                logger.info("exec command %r succeeded", cmd)
         except Exception as exc:
             logger.warning("exec command %r failed: %s", cmd, exc)
 
@@ -349,9 +380,7 @@ class FocusSwitchDaemon:
             self._create_background_task(self._spawn_exec(action.exec_cmd))
         if action.evdev_codes:
             self._held_chords[keycode] = action.evdev_codes
-            for code in action.evdev_codes:
-                ui.write(ecodes.EV_KEY, code, 1)
-            ui.syn()
+            _emit_chord_down(ui, action.evdev_codes)
 
     def _flush_pending_button(self, ui: VirtualKeyboard | Any, keycode: int) -> None:
         pending = self._pending_buttons.pop(keycode, None)
@@ -365,6 +394,7 @@ class FocusSwitchDaemon:
 
     def handle_key_event(self, ui: VirtualKeyboard | Any, keycode: int, value: int) -> None:
         """Process a single EV_KEY event (value: 0=up, 1=down, 2=hold) and emit to UInput."""
+        logger.debug("RAW EVDEV: keycode=%d value=%d raw_btn=%s", keycode, value, FACTORY_EVDEV_TO_BUTTON.get(keycode, "UNKNOWN"))
         # 1. RELEASE (value == 0)
         if value == 0:
             self._physical_held_buttons.pop(keycode, None)
@@ -379,12 +409,8 @@ class FocusSwitchDaemon:
                     if pending.action.exec_cmd:
                         self._create_background_task(self._spawn_exec(pending.action.exec_cmd))
                     if pending.action.evdev_codes:
-                        for code in pending.action.evdev_codes:
-                            ui.write(ecodes.EV_KEY, code, 1)
-                        ui.syn()
-                        for code in reversed(pending.action.evdev_codes):
-                            ui.write(ecodes.EV_KEY, code, 0)
-                        ui.syn()
+                        _emit_chord_down(ui, pending.action.evdev_codes)
+                        _emit_chord_up(ui, pending.action.evdev_codes)
                 return
 
             # Case B: Button was part of an active combo
@@ -392,17 +418,13 @@ class FocusSwitchDaemon:
             if combo_set is not None:
                 combo_act = self._active_combos.pop(combo_set, None)
                 if combo_act is not None and combo_act.evdev_codes:
-                    for code in reversed(combo_act.evdev_codes):
-                        ui.write(ecodes.EV_KEY, code, 0)
-                    ui.syn()
+                    _emit_chord_up(ui, combo_act.evdev_codes)
                 return
 
             # Case C: Solo held chord release
             held = self._held_chords.pop(keycode, None)
             if held is not None:
-                for code in reversed(held):
-                    ui.write(ecodes.EV_KEY, code, 0)
-                ui.syn()
+                _emit_chord_up(ui, held)
             return
 
         # 2. REPEAT (value == 2)
@@ -464,6 +486,7 @@ class FocusSwitchDaemon:
         combo_buttons = {b for c in combos for b in c}
         if logical_btn not in combo_buttons:
             action = self.active_profile.buttons.get(logical_btn)
+            logger.debug("Solo press: btn=%s (key=%d) -> action=%s (profile=%s)", logical_btn, keycode, action, self.active_profile.name)
             if action is not None:
                 self._emit_solo_down(ui, keycode, action, logical_btn)
             return
@@ -505,12 +528,11 @@ class FocusSwitchDaemon:
             if matched_held_code is not None:
                 held_solo = self._held_chords.pop(matched_held_code, None)
                 if held_solo:
-                    for code in reversed(held_solo):
-                        ui.write(ecodes.EV_KEY, code, 0)
-                    ui.syn()
+                    _emit_chord_up(ui, held_solo)
 
             # 3. Emit the combo action
             combo_act = combos[matched_combo]
+            logger.info("Combo matched: %s -> action=%s (profile=%s)", "+".join(sorted(matched_combo)), combo_act, self.active_profile.name)
             self._record_key_event(self._order_combo_buttons(matched_combo), combo_act, is_combo=True)
             if combo_act.exec_cmd:
                 self._create_background_task(self._spawn_exec(combo_act.exec_cmd))
@@ -521,9 +543,7 @@ class FocusSwitchDaemon:
                     self._held_combos[p.keycode] = matched_combo
                 if matched_held_code is not None:
                     self._held_combos[matched_held_code] = matched_combo
-                for code in combo_act.evdev_codes:
-                    ui.write(ecodes.EV_KEY, code, 1)
-                ui.syn()
+                _emit_chord_down(ui, combo_act.evdev_codes)
             return
 
         # No companion button pending yet -> buffer this button for combo_timeout_ms

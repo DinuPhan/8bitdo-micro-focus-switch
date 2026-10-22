@@ -301,9 +301,9 @@ description = "Global shortcuts inherited by all profiles unless overridden"
 "L2+X" = "exec:omarchy-launch-or-focus-webapp 'Google Photos' https://photos.google.com/" # Focus/Open Google Photos
 "L2+B" = ["LEFTMETA", "SPACE"]       # Omarchy Menu / Launcher
 "L2+L" = ["LEFTMETA", "TAB"]         # Next workspace
-"L2+R" = "F9"                        # Whisper voice dictation
+"L2+R" = "exec:omarchy-shell shell toggle dinuphan.omaboy" # Toggle OmaBoy HUD panel
 "L2+SELECT" = ["LEFTMETA", "W"]      # Close active window
-"L2+START" = "exec:omarchy-shell shell toggle dinuphan.omaboy" # Toggle OmaBoy HUD panel
+"L2+START" = "F9"                        # Whisper voice dictation (universal across all profiles)
 
 [profiles.agy]
 description = "Antigravity (agy) / Terminal Coding Profile (captured from controller)"
@@ -393,27 +393,38 @@ LEFT = "LEFT"                    # Seek -5s
 RIGHT = "RIGHT"                  # Seek +5s
 
 [profiles.browser]
-description = "Web Browsing / Reading (Firefox, Chromium, Brave, Zen)"
+description = "Web Browsing / Reading (Chrome, Chromium, Firefox, Brave, Zen)"
 match_class = "^(firefox|brave-browser|chromium|google-chrome|zen|vivaldi-stable)$"
 turn = 0
 
+[profiles.browser.combos]
+"R2+Y" = ["LEFTALT", "LEFT"]        # History Back (Y is physically Left)
+"R2+A" = ["LEFTALT", "RIGHT"]       # History Forward (A is physically Right)
+"R2+X" = ["LEFTCTRL", "R"]          # Reload page
+"R2+B" = ["LEFTCTRL", "F"]          # Find in page
+"R2+R" = ["LEFTCTRL", "PAGEDOWN"]   # Next tab
+"R2+L" = ["LEFTCTRL", "PAGEUP"]     # Previous tab
+"R2+UP" = ["LEFTCTRL", "EQUAL"]     # Zoom in
+"R2+DOWN" = ["LEFTCTRL", "MINUS"]   # Zoom out
+"R2+START" = ["LEFTCTRL", "T"]      # Open new tab
+
 [profiles.browser.buttons]
-A = "SPACE"                      # Scroll down / Activate
-B = "PAGEDOWN"                   # Page down
-X = "PAGEUP"                     # Page up
-Y = ["LEFTCTRL", "T"]            # New tab
-L = ["LEFTCTRL", "PGUP"]         # Previous tab
-R = ["LEFTCTRL", "PGDN"]         # Next tab
-L2 = ["LEFTALT", "LEFT"]         # History back
-R2 = ["LEFTALT", "RIGHT"]        # History forward
-SELECT = ["LEFTCTRL", "W"]       # Close tab
-START = ["LEFTCTRL", "SHIFT", "T"] # Reopen closed tab
-STAR = "F5"                      # Reload page
-HOME = "ESC"                     # Stop / Unfocus
-UP = "UP"                        # Scroll up
-DOWN = "DOWN"                    # Scroll down
-LEFT = "LEFT"                    # Scroll left
-RIGHT = "RIGHT"                  # Scroll right
+A = "ENTER"                         # Open focused link / Submit form
+B = "PAGEDOWN"                      # Page down
+X = "PAGEUP"                        # Page up
+Y = ["LEFTCTRL", "L"]               # Focus address bar (search Google)
+L = ["LEFTSHIFT", "TAB"]            # Previous hyperlink
+R = "TAB"                           # Next hyperlink
+L2 = "None"                         # Dedicated Omarchy Fn modifier
+R2 = "None"                         # Dedicated Browser modifier
+SELECT = ["LEFTCTRL", "W"]          # Close tab
+START = ["LEFTCTRL", "T"]           # New tab
+STAR = ["LEFTCTRL", "LEFTSHIFT", "T"] # Reopen closed tab (Star button)
+HOME = ["LEFTALT", "LEFT"]          # Browser back (single button fallback)
+UP = "UP"                           # Scroll up
+DOWN = "DOWN"                       # Scroll down
+LEFT = "LEFT"                       # Scroll left
+RIGHT = "RIGHT"                     # Scroll right
 
 [profiles.media]
 description = "Video / Media Player (mpv, VLC)"

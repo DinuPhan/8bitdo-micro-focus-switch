@@ -548,7 +548,7 @@ def get_builtin_hardware_preset(name: str) -> MicroHardwareProfile:
     key = name.strip().lower()
     if key in ("factory", "default", "reset"):
         return MicroHardwareProfile(
-            enabled=False,
+            enabled=True,
             turn=0,
             slots=dict(FACTORY_BUTTON_HID_USAGES),
         )
