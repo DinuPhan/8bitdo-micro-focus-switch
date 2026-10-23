@@ -664,4 +664,50 @@ RIGHT = "Right"
         let ev_magic = evaluate_win32_hook_event(0, 0x64, 0, MAGIC_EXTRA_INFO, WM_KEYDOWN, &mut held);
         assert_eq!(ev_magic, None);
     }
+
+    #[test]
+    fn test_sentinel_evdev_resolution_and_daemon_support() {
+        use crate::core::protocol::evdev_to_button;
+        use crate::core::config::load_config_from_str;
+        use crate::core::daemon::FocusSwitchDaemon;
+
+        // Verify evdev_to_button resolves both factory and sentinel keys
+        assert_eq!(evdev_to_button(34), Some("A")); // Factory G -> A
+        assert_eq!(evdev_to_button(183), Some("A")); // Sentinel F13 -> A
+        assert_eq!(evdev_to_button(184), Some("B")); // Sentinel F14 -> B
+        assert_eq!(evdev_to_button(98), Some("SELECT")); // Sentinel KPSLASH -> SELECT
+        assert_eq!(evdev_to_button(78), Some("HOME")); // Sentinel KPPLUS -> HOME
+
+        // Test daemon remapping Sentinel F13 keycode
+        let toml_str = r#"
+[general]
+fallback_profile = "test"
+backend = "uinput"
+
+[profiles.test]
+description = "Test Sentinel Support"
+buttons.A = "SPACE"
+"#;
+        let cfg = load_config_from_str(toml_str).unwrap();
+        let mut d = FocusSwitchDaemon::new(cfg, None, None, None);
+        struct MockUi(Vec<(u16, u16, i32)>);
+        impl crate::core::input_backend::VirtualKeyboard for MockUi {
+            fn write(&mut self, etype: u16, code: u16, val: i32) {
+                self.0.push((etype, code, val));
+            }
+            fn syn(&mut self) {}
+            fn close(&mut self) {}
+        }
+
+        let mut ui = MockUi(Vec::new());
+        // Press button A via Sentinel keycode 183 (F13)
+        d.handle_key_event(&mut ui, 183, 1);
+        // Expect SPACE (evdev 57) down
+        assert!(ui.0.iter().any(|&(_, c, v)| c == 57 && v == 1));
+
+        // Release button A via Sentinel keycode 183
+        d.handle_key_event(&mut ui, 183, 0);
+        // Expect SPACE (evdev 57) up
+        assert!(ui.0.iter().any(|&(_, c, v)| c == 57 && v == 0));
+    }
 }

@@ -12,7 +12,7 @@ use crate::ble::{find_micro_ble_device, MicroBleSession};
 use crate::config::{get_home_dir, load_config, AppConfig, ButtonAction, ComboSet, ProfileConfig};
 use crate::input_backend::{check_uinput_access, VirtualKeyboard, WaylandVirtualKeyboard};
 use crate::protocol::{
-    factory_evdev_to_button, get_builtin_hardware_preset, rotate_dpad_button, EV_KEY,
+    evdev_to_button, get_builtin_hardware_preset, rotate_dpad_button, EV_KEY,
     SUPPORTED_KEYBOARD_DEVICE_IDS, SUPPORTED_KEYBOARD_NAME_SUBSTRINGS,
 };
 use crate::window_watcher::{spawn_focus_watcher, ActiveWindow};
@@ -177,6 +177,39 @@ pub fn find_micro_input_devices_info() -> Vec<ControllerDeviceInfo> {
     }
 }
 
+async fn probe_controller_hardware_profile(
+    ble_address: Option<&str>,
+) -> Option<HashMap<u16, &'static str>> {
+    use crate::ble::{find_micro_ble_device, MicroBleSession};
+    use crate::keycodes::key_by_hid;
+    use crate::protocol::{identify_hardware_profile_name, MicroHardwareProfile, PHYSICAL_BUTTONS};
+
+    let dev = find_micro_ble_device(ble_address, Duration::from_secs(3)).await.ok()?;
+    let session = MicroBleSession::connect(dev, Duration::from_secs(3)).await.ok()?;
+    let bytes = session.read_config_bytes().await.ok()?;
+    let _ = session.close().await;
+
+    let hw = MicroHardwareProfile::from_bytes(&bytes).ok()?;
+    let profile_name = identify_hardware_profile_name(&hw);
+    println!(
+        "[8bitdo-micro] BLE detected controller hardware profile: '{}' (turn={}°)",
+        profile_name,
+        hw.turn_degrees()
+    );
+
+    let mut map = HashMap::new();
+    for &btn in PHYSICAL_BUTTONS {
+        if let Some(&[hid0, _, _, _]) = hw.slots.get(btn) {
+            if hid0 != 0 {
+                if let Some(spec) = key_by_hid(hid0) {
+                    map.insert(spec.evdev, btn);
+                }
+            }
+        }
+    }
+    Some(map)
+}
+
 fn emit_chord_down(ui: &mut dyn VirtualKeyboard, codes: &[u16]) {
     for &c in codes {
         ui.write(EV_KEY, c, 1);
@@ -215,6 +248,7 @@ pub struct FocusSwitchDaemon {
     pub keypress_event_path: Option<PathBuf>,
     pub ble_dirty: bool,
     pub capture_factory_keys: bool,
+    pub dynamic_button_map: HashMap<u16, &'static str>,
 }
 
 impl FocusSwitchDaemon {
@@ -271,9 +305,17 @@ impl FocusSwitchDaemon {
             keypress_event_path,
             ble_dirty: true,
             capture_factory_keys,
+            dynamic_button_map: HashMap::new(),
         };
         daemon.ensure_keypress_event_file();
         daemon
+    }
+
+    pub fn resolve_button_name(&self, keycode: u16) -> Option<&'static str> {
+        if let Some(&btn) = self.dynamic_button_map.get(&keycode) {
+            return Some(btn);
+        }
+        evdev_to_button(keycode)
     }
 
     fn ensure_keypress_event_file(&self) {
@@ -439,7 +481,7 @@ impl FocusSwitchDaemon {
         button_name: &str,
     ) {
         let resolved_name = if button_name.is_empty() {
-            factory_evdev_to_button(keycode)
+            self.resolve_button_name(keycode)
                 .and_then(|raw| rotate_dpad_button(raw, self.active_profile.turn).ok())
                 .unwrap_or_default()
         } else {
@@ -503,7 +545,7 @@ impl FocusSwitchDaemon {
         value: i32,
         async_combo_buffer: bool,
     ) {
-        let btn_name = factory_evdev_to_button(keycode).unwrap_or("?");
+        let btn_name = self.resolve_button_name(keycode).unwrap_or("?");
         eprintln!(
             "[8bitdo-micro] RAW EVDEV: keycode={} value={} (btn={}) [profile={}]",
             keycode, value, btn_name, self.active_profile.name
@@ -582,7 +624,7 @@ impl FocusSwitchDaemon {
             return;
         }
 
-        let Some(button_name) = factory_evdev_to_button(keycode) else {
+        let Some(button_name) = self.resolve_button_name(keycode) else {
             self.held_chords.insert(keycode, vec![keycode]);
             ui.write(EV_KEY, keycode, 1);
             ui.syn();
@@ -729,6 +771,23 @@ impl FocusSwitchDaemon {
     ) -> Result<(), String> {
         let mut focus_rx = spawn_focus_watcher();
         let (key_tx, mut key_rx) = mpsc::unbounded_channel::<(u16, i32)>();
+        let (hw_map_tx, mut hw_map_rx) = mpsc::unbounded_channel::<HashMap<u16, &'static str>>();
+        let (ble_probe_tx, mut ble_probe_rx) = mpsc::channel::<()>(1);
+
+        let ble_addr = self.ble_address.clone();
+        let hw_map_tx_probe = hw_map_tx.clone();
+        tokio::spawn(async move {
+            // Initial probe
+            if let Some(map) = probe_controller_hardware_profile(ble_addr.as_deref()).await {
+                let _ = hw_map_tx_probe.send(map);
+            }
+            while ble_probe_rx.recv().await.is_some() {
+                tokio::time::sleep(Duration::from_millis(600)).await;
+                if let Some(map) = probe_controller_hardware_profile(ble_addr.as_deref()).await {
+                    let _ = hw_map_tx_probe.send(map);
+                }
+            }
+        });
 
         // Hybrid or Sentinel BLE init if requested
         if self.backend == "hybrid" && cfg!(target_os = "linux") {
@@ -771,6 +830,7 @@ impl FocusSwitchDaemon {
         #[cfg(target_os = "linux")]
         if self.backend == "uinput" || self.backend == "host" || self.backend == "hybrid" {
             let key_tx_linux = key_tx.clone();
+            let ble_probe_tx_linux = ble_probe_tx.clone();
             let mut stop_linux = stop_rx.clone();
             tokio::spawn(async move {
                 loop {
@@ -812,6 +872,7 @@ impl FocusSwitchDaemon {
                             "[8bitdo-micro] Successfully grabbed exclusive access to {:?}",
                             path
                         );
+                        let _ = ble_probe_tx_linux.try_send(());
                     }
 
                     match dev.into_event_stream() {
@@ -944,6 +1005,13 @@ impl FocusSwitchDaemon {
                 }
                 Some((code, val)) = key_rx.recv() => {
                     self.handle_key_event_with_mode(ui.as_mut(), code, val, true);
+                }
+                Some(new_map) = hw_map_rx.recv() => {
+                    println!(
+                        "[8bitdo-micro] Synced dynamic hardware button map from BLE ({} buttons mapped)",
+                        new_map.len()
+                    );
+                    self.dynamic_button_map.extend(new_map);
                 }
                 _ = combo_tick.tick() => {
                     if !self.pending_buttons.is_empty() {

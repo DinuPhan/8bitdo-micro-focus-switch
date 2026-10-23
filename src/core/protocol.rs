@@ -169,6 +169,53 @@ pub fn factory_evdev_to_button(code: u16) -> Option<&'static str> {
     }
 }
 
+pub fn sentinel_evdev_to_button(code: u16) -> Option<&'static str> {
+    match code {
+        183 => Some("A"),      // KEY_F13
+        184 => Some("B"),      // KEY_F14
+        185 => Some("X"),      // KEY_F15
+        186 => Some("Y"),      // KEY_F16
+        187 => Some("L"),      // KEY_F17
+        188 => Some("R"),      // KEY_F18
+        189 => Some("L2"),     // KEY_F19
+        190 => Some("R2"),     // KEY_F20
+        98  => Some("SELECT"), // KEY_KPSLASH
+        55  => Some("START"),  // KEY_KPASTERISK
+        74  => Some("STAR"),   // KEY_KPMINUS
+        78  => Some("HOME"),   // KEY_KPPLUS
+        72  => Some("UP"),     // KEY_KP8
+        80  => Some("DOWN"),   // KEY_KP2
+        75  => Some("LEFT"),   // KEY_KP4
+        77  => Some("RIGHT"),  // KEY_KP6
+        _ => None,
+    }
+}
+
+/// Resolve physical button name from evdev keycode, supporting both Factory and Sentinel hardware presets.
+pub fn evdev_to_button(code: u16) -> Option<&'static str> {
+    factory_evdev_to_button(code).or_else(|| sentinel_evdev_to_button(code))
+}
+
+pub fn identify_hardware_profile_name(hw: &MicroHardwareProfile) -> &'static str {
+    for name in &["sentinel", "factory", "agy", "youtube", "anki", "supermemo"] {
+        if let Ok(preset) = get_builtin_hardware_preset(name) {
+            let mut all_match = true;
+            for &btn in PHYSICAL_BUTTONS {
+                let s1 = hw.slots.get(btn).copied().unwrap_or([0, 0, 0, 0]);
+                let s2 = preset.slots.get(btn).copied().unwrap_or([0, 0, 0, 0]);
+                if s1 != s2 {
+                    all_match = false;
+                    break;
+                }
+            }
+            if all_match {
+                return name;
+            }
+        }
+    }
+    "custom"
+}
+
 pub fn button_to_factory_evdev(btn: &str) -> Option<u16> {
     match btn {
         "A" => Some(34),
