@@ -858,7 +858,7 @@ pub fn load_config_from_str(raw_text: &str) -> Result<AppConfig, String> {
     let capture_factory_keys = general
         .and_then(|g| g.get("capture_factory_keys"))
         .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+        .unwrap_or(false);
 
     let mut profiles: HashMap<String, ProfileConfig> = HashMap::new();
 

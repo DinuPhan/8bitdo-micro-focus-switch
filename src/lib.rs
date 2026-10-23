@@ -653,6 +653,10 @@ RIGHT = "Right"
         let ev_fac_dis = evaluate_win32_hook_event_ex(0, 0x22, 0, 0, WM_KEYDOWN, &mut held, false);
         assert_eq!(ev_fac_dis, None);
 
+        // Default evaluate_win32_hook_event should never intercept factory key G
+        let ev_fac_default = evaluate_win32_hook_event(0, 0x22, 0, 0, WM_KEYDOWN, &mut held);
+        assert_eq!(ev_fac_default, None);
+
         // 3. Ignored Injected Keys (anti feedback loop)
         let ev_inj = evaluate_win32_hook_event(0, 0x64, LLKHF_INJECTED, 0, WM_KEYDOWN, &mut held);
         assert_eq!(ev_inj, None);

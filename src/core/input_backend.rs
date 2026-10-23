@@ -397,7 +397,7 @@ pub fn evaluate_win32_hook_event(
         dw_extra_info,
         w_param,
         held_buttons,
-        true,
+        false,
     )
 }
 
@@ -463,7 +463,7 @@ pub mod windows_hook {
     static HOOK_SENDER: Mutex<Option<mpsc::UnboundedSender<(u16, i32)>>> = Mutex::new(None);
     static HOOK_HELD: Mutex<Option<HashSet<String>>> = Mutex::new(None);
     static HOOK_HHOOK: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
-    static ALLOW_FACTORY: AtomicBool = AtomicBool::new(true);
+    static ALLOW_FACTORY: AtomicBool = AtomicBool::new(false);
 
     unsafe extern "system" fn ll_keyboard_proc(
         n_code: i32,

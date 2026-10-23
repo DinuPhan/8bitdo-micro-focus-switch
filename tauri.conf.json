@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/v2/tooling/cli/schema.json",
   "productName": "8BitDo Micro Focus Switch",
   "mainBinaryName": "8bitdo-micro-focus-switch",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "identifier": "com.dinu.eightbitdo-micro-focus-switch",
   "build": {
     "frontendDist": "frontend/dist"
