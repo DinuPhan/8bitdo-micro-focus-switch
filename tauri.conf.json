@@ -1,13 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/v2/tooling/cli/schema.json",
   "productName": "8BitDo Micro Focus Switch",
-  "version": "0.2.0",
+  "mainBinaryName": "8bitdo-micro-focus-switch",
+  "version": "0.3.0",
   "identifier": "com.dinu.eightbitdo-micro-focus-switch",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "npm --prefix frontend run dev",
+    "beforeBuildCommand": "npm --prefix frontend run build",
+    "frontendDist": "frontend/dist"
   },
   "app": {
     "withGlobalTauri": true,

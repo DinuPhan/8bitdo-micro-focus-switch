@@ -49,12 +49,27 @@ Ngay khi cài đặt xong, `8bitdo-micro-focus-switch` đã được cấu hình
 
 ### 1. Cài đặt
 
-Yêu cầu Python 3.11+. Bạn có thể cài đặt thông qua [`uv`](https://github.com/astral-sh/uv) hoặc `pip`:
+`8bitdo-micro-focus-switch` là một file thực thi nhị phân (single binary) độc lập viết bằng Rust + Tauri v2, **hoàn toàn không cần bất kỳ dependency runtime bên ngoài nào**.
 
+#### Tải bản cài đặt sẵn
+Bạn có thể tải gói cài đặt trực tiếp cho hệ điều hành của mình tại [Releases](https://github.com/DinuPhan/8bitdo-micro-focus-switch/releases):
+- **Linux**: `.deb`, `.AppImage`, hoặc binary độc lập `8bitdo-micro-focus-switch`
+- **Windows**: Bộ cài `.msi` hoặc file `8bitdo-micro-focus-switch.exe`
+- **macOS**: `.dmg` (Universal Apple Silicon & Intel)
+
+#### Hoặc biên dịch từ mã nguồn
 ```bash
 git clone https://github.com/DinuPhan/8bitdo-micro-focus-switch.git
-cd 8bitdo-micro-focus-switch
-uv pip install -e .
+cd 8bitdo-micro-focus-switch/gui
+npm install && npm run build
+cargo build --release --manifest-path src-tauri/Cargo.toml
+cp src-tauri/target/release/8bitdo-micro-focus-switch ~/.local/bin/
+```
+
+#### Thiết lập 1 bước (Linux)
+Chạy lệnh `setup` để tự động tạo cấu hình `profiles.toml`, cấp quyền `/dev/uinput` và bật service chạy ngầm systemd:
+```bash
+8bitdo-micro-focus-switch setup
 ```
 
 ### 2. Kết nối tay cầm (Chế độ Keyboard Bluetooth)
@@ -87,18 +102,23 @@ Cả hai tay cầm đều cần được ghép nối ở **Chế độ Bàn phí
 
 ---
 
-## Ứng dụng giao diện đồ họa (Tauri GUI)
+## Ứng dụng giao diện đồ họa (Unified GUI & Khay hệ thống)
 
-Nếu bạn thích một giao diện trực quan bằng chuột hơn là các dòng lệnh terminal, dự án có sẵn một ứng dụng desktop hoàn chỉnh được xây dựng bằng Tauri:
+Nếu bạn thích một giao diện trực quan bằng chuột hơn là các dòng lệnh terminal, file nhị phân hợp nhất duy nhất cung cấp cả CLI và desktop GUI:
+
+- Chạy `8bitdo-micro-focus-switch` (không kèm tham số hoặc qua App Launcher) để mở giao diện GUI.
+- Chạy `8bitdo-micro-focus-switch [subcommand]` (như `status`, `bind`, `show`, `ble`) để chạy như một công cụ dòng lệnh trong terminal.
 
 <p align="center">
   <img src="assets/tauri_gui_preview.png" alt="Giao diện ứng dụng 8BitDo Micro Focus Switch GUI" width="680" />
 </p>
 
+- **Daemon chạy ngầm in-process**: Khi mở GUI, tiến trình chuyển đổi phím chạy trực tiếp trong cùng tiến trình và tích hợp khay hệ thống (System Tray).
 - **Sơ đồ gán phím trực quan (Visual Mapper)**: Khung vẽ viền tay cầm tương tác với các chú thích thời gian thực cho từng profile.
 - **Trình biên tập Combos & Chords**: Cấu hình các tổ hợp phím bấm đồng thời với giao diện chọn phím trực quan.
 - **Tự động bắt cửa sổ (Active Window Auto-Matching)**: Tự động nhận diện cửa sổ bạn đang chọn chỉ với một cú click chuột để liên kết profile.
 - **Trạng thái Daemon thời gian thực**: Hiển thị kết nối trực tiếp với tiến trình chuyển đổi phím chạy ngầm.
+- **Nạp cấu hình phần cứng qua BLE GATT**: Đọc và ghi trực tiếp bộ nhớ onboard của 8BitDo Micro mà không cần bất kỳ công cụ phụ trợ nào.
 
 Các gói cài đặt sẵn cho Linux (`.AppImage`, `.deb`) có sẵn tại mục [Releases](https://github.com/DinuPhan/8bitdo-micro-focus-switch/releases). Các bản dựng thử nghiệm cho macOS (`.dmg`) và Windows (`.msi`, `.exe`) cũng được cung cấp sẵn để bạn trải nghiệm và đóng góp ý kiến.
 

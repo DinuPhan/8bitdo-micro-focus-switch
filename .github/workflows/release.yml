@@ -4,16 +4,70 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to attach artifacts to (e.g. v0.1.0)'
+        description: 'Release tag to attach artifacts to (e.g. v0.3.0)'
         required: true
-        default: 'v0.1.0'
+        default: 'v0.3.0'
   push:
     tags:
       - 'v*'
 
 jobs:
-  release-gui:
-    needs: release-python
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libdbus-1-dev libssl-dev pkg-config
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Run golden test suite
+        run: cargo test
+
+  create-release:
+    name: Ensure GitHub Release Exists
+    needs: test
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release if not exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if ! gh release view "$TARGET_TAG" >/dev/null 2>&1; then
+            gh release create "$TARGET_TAG" \
+              --title "8BitDo Micro Focus Switch $TARGET_TAG" \
+              --notes "See [RELEASE_NOTES.md](https://github.com/DinuPhan/8bitdo-micro-focus-switch/blob/main/RELEASE_NOTES.md) for full changelog."
+          fi
+
+  release:
+    name: Build & Publish Release
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -21,13 +75,21 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest'
+            target: 'aarch64-apple-darwin'
             args: '--target aarch64-apple-darwin'
+            artifact_name: '8bitdo-micro-focus-switch-macos-aarch64.tar.gz'
           - platform: 'macos-latest'
+            target: 'x86_64-apple-darwin'
             args: '--target x86_64-apple-darwin'
+            artifact_name: '8bitdo-micro-focus-switch-macos-x86_64.tar.gz'
           - platform: 'ubuntu-22.04'
+            target: ''
             args: ''
+            artifact_name: '8bitdo-micro-focus-switch-linux-x86_64.tar.gz'
           - platform: 'windows-latest'
+            target: ''
             args: ''
+            artifact_name: '8bitdo-micro-focus-switch-windows-x86_64.zip'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -37,65 +99,65 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2 libdbus-1-dev libssl-dev pkg-config
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
-          cache-dependency-path: 'gui/package-lock.json'
+          cache-dependency-path: 'frontend/package-lock.json'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.target != '' && matrix.target || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
-        with:
-          workspaces: 'gui/src-tauri -> target'
 
-      - name: Install frontend dependencies
+      - name: Build frontend
         run: |
-          cd gui
+          cd frontend
           npm ci
+          npm run build
 
-      - name: Build and Publish Tauri GUI
+      - name: Build and Publish Tauri App Bundles
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectPath: './gui'
+          projectPath: './'
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseBody: 'See release notes for full changelog.'
+          releaseName: '8BitDo Micro Focus Switch ${{ github.event.inputs.tag || github.ref_name }}'
+          releaseBody: 'See RELEASE_NOTES.md for full details.'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
 
-  release-python:
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Build Python wheel and sdist
-        run: |
-          uv build
-
-      - name: Create release (if missing) and upload Python assets
+      - name: Archive and Upload Standalone CLI Binary (Unix)
+        if: matrix.platform != 'windows-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TARGET_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          if ! gh release view "$TARGET_TAG" >/dev/null 2>&1; then
-            gh release create "$TARGET_TAG" --title "$TARGET_TAG" --generate-notes
+          BIN_PATH="target/release/8bitdo-micro-focus-switch"
+          if [ -n "${{ matrix.target }}" ]; then
+            BIN_PATH="target/${{ matrix.target }}/release/8bitdo-micro-focus-switch"
           fi
-          gh release upload "$TARGET_TAG" dist/*.whl dist/*.tar.gz --clobber
+          if [ -f "$BIN_PATH" ]; then
+            tar -czvf "${{ matrix.artifact_name }}" -C "$(dirname "$BIN_PATH")" "$(basename "$BIN_PATH")"
+            gh release upload "$TARGET_TAG" "${{ matrix.artifact_name }}" --clobber
+          fi
+
+      - name: Archive and Upload Standalone CLI Binary (Windows)
+        if: matrix.platform == 'windows-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $TargetTag = if ("${{ github.event.inputs.tag }}") { "${{ github.event.inputs.tag }}" } else { "${{ github.ref_name }}" }
+          $BinPath = "target\release\8bitdo-micro-focus-switch.exe"
+          if (Test-Path $BinPath) {
+            Compress-Archive -Path $BinPath -DestinationPath "${{ matrix.artifact_name }}" -Force
+            gh release upload $TargetTag "${{ matrix.artifact_name }}" --clobber
+          }

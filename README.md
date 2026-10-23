@@ -49,10 +49,27 @@ Out of the box, `8bitdo-micro-focus-switch` comes configured with handy defaults
 
 ### 1. Installation & One-Step Setup
 
-Requires Python 3.11+. Install using [`uv`](https://github.com/astral-sh/uv) (or `pip`) and run `setup` to automatically create the default `profiles.toml`, configure `/dev/uinput` permissions, and enable + start the background systemd service:
+`8bitdo-micro-focus-switch` is a single, self-contained native binary built in Rust with Tauri v2. It requires **zero external runtime dependencies**.
+
+#### Download Pre-Built Binary / Package
+Download the latest pre-built package for your platform from [Releases](https://github.com/DinuPhan/8bitdo-micro-focus-switch/releases):
+- **Linux**: `.deb`, `.AppImage`, or standalone binary `8bitdo-micro-focus-switch`
+- **Windows**: `.msi` installer or `8bitdo-micro-focus-switch.exe`
+- **macOS**: `.dmg` (Universal Apple Silicon & Intel)
+
+#### Or Build from Source
+```bash
+git clone https://github.com/DinuPhan/8bitdo-micro-focus-switch.git
+cd 8bitdo-micro-focus-switch/gui
+npm install && npm run build
+cargo build --release --manifest-path src-tauri/Cargo.toml
+cp src-tauri/target/release/8bitdo-micro-focus-switch ~/.local/bin/
+```
+
+#### One-Step Setup (Linux)
+Run `setup` to automatically create the default `profiles.toml`, configure `/dev/uinput` permissions, and enable + start the background systemd service:
 
 ```bash
-uv tool install git+https://github.com/DinuPhan/8bitdo-micro-focus-switch.git
 8bitdo-micro-focus-switch setup
 ```
 
@@ -86,18 +103,23 @@ Both controllers must be paired in **Keyboard Mode** so the daemon can intercept
 
 ---
 
-## Desktop Graphical App (Tauri GUI)
+## Desktop Graphical App (Unified GUI & System Tray)
 
-Prefer a visual interface over terminal commands? A desktop application built with Tauri is also available:
+Prefer a visual interface over terminal commands? The single unified binary includes both the CLI and the desktop GUI:
+
+- Run `8bitdo-micro-focus-switch` (with no arguments or via application launcher) to open the GUI.
+- Run `8bitdo-micro-focus-switch [subcommand]` (e.g. `status`, `bind`, `show`, `ble`) to run as a CLI tool in your terminal.
 
 <p align="center">
   <img src="assets/tauri_gui_preview.png" alt="8BitDo Micro Focus Switch GUI Preview" width="680" />
 </p>
 
+- **In-Process Daemon**: When running the GUI, the background focus switch daemon runs directly in-process with system tray controls (minimize to tray, quick reload, toggle).
 - **Visual Mapper**: Interactive controller contour with real-time callouts for every profile.
 - **Combos & Chords Editor**: Configure multi-button hotkeys with intuitive pickers.
 - **Active Window Auto-Matching**: Detects the focused window with one click to bind profiles.
 - **Live Daemon Status**: Shows real-time connection status of the background focus switcher.
+- **Native Hardware Flasher**: Reads and writes 8BitDo Micro onboard memory over BLE GATT directly without external dependencies.
 
 Pre-built Linux packages (`.AppImage`, `.deb`) are available on [Releases](https://github.com/DinuPhan/8bitdo-micro-focus-switch/releases). Experimental builds for macOS (`.dmg`) and Windows (`.msi`, `.exe`) are also provided for testing and feedback.
 

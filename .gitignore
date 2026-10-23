@@ -1,17 +1,15 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+# Rust & Cargo artifacts
+target/
+Cargo.lock
 
-# Virtual environments
-.venv
+# Tauri build artifacts
+gen/
 
-# GUI and Tauri artifacts
-gui/node_modules/
-gui/dist/
-gui/src-tauri/target/
-gui/src-tauri/gen/
+# Frontend Web artifacts
+frontend/node_modules/
+frontend/dist/
 
+# OS / Editor files
+.DS_Store
+*.swp
+*~

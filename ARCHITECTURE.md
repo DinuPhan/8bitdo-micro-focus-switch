@@ -15,7 +15,7 @@ This document details the internal design, reverse-engineered BLE GATT protocol,
             (/dev/input/event*)    │                │ (Service 0xFF10 / Char 0xFF13)
                                    ▼                ▼
             ┌──────────────────────────────┐  ┌──────────────────────────────┐
-            │       evdev / uinput         │  │     Bleak Async BLE Client   │
+            │   evdev / uinput (or Win32)  │  │   btleplug Async BLE Client  │
             │   (<1ms Instant Remapping)   │  │   (Direct Hardware Flasher)  │
             └──────────────┬───────────────┘  └──────────────┬───────────────┘
                            │                                 │
@@ -140,8 +140,8 @@ Focus detection uses Hyprland's Unix domain socket stream (`$XDG_RUNTIME_DIR/hyp
 
 ## 5. Visualizer Engine
 
-The diagram generator (`eightbitdo_micro_focus_switch/visualizer.py`):
-1. **Asset Embedding**: Uses `importlib.resources` to embed a dark-mode vector-styled controller contour PNG directly into self-contained SVG files as a `data:image/png;base64,...` URI.
+The diagram generator (`gui/src-tauri/src/visualizer.rs`):
+1. **Asset Embedding**: Uses compile-time `include_bytes!("../../src/assets/micro-controller.png")` to embed a dark-mode vector-styled controller contour directly into self-contained SVG files as a `data:image/png;base64,...` URI.
 2. **Anchor Calculations**: 16 geometric anchors map to the physical centers of each button, running leader polylines with rounded elbows to label badges on the left and right margins.
 3. **Catppuccin Palette**: Uses Catppuccin Mocha styling (`#11111b` background, `#cdd6f4` text, categorized accent colors for action buttons, triggers, bumpers, and D-pad).
 4. **Interactive HTML Viewer**: Embeds generated SVGs for every profile into a tabbed single-page HTML interface with zero external CSS/JS dependencies.

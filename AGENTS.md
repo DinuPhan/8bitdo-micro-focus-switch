@@ -170,9 +170,9 @@ To bind a button or combo without manual TOML text editing:
 
 ### 3.3 Testing Changes
 
-Run the test suite to verify no regressions in parser or protocol:
+Run the Rust test suite to verify no regressions in parser, protocol, daemon, or visualizer:
 ```bash
-uv run pytest -v
+cargo test --manifest-path gui/src-tauri/Cargo.toml
 ```
 
 ### 3.3 Inspecting Hardware State (BLE)
