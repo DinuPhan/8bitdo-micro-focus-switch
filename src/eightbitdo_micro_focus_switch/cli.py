@@ -46,8 +46,8 @@ UDEV_RULE_PATH = Path("/etc/udev/rules.d/99-8bitdo-micro-uinput.rules")
 UDEV_RULE_CONTENT = (
     'KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", '
     'OPTIONS+="static_node=uinput", TAG+="uaccess"\n'
-    'KERNEL=="event*", SUBSYSTEM=="input", ATTRS{name}=="8BitDo*", TAG+="uaccess"\n'
-    'KERNEL=="event*", SUBSYSTEMS=="input", ATTRS{id/vendor}=="2dc8", TAG+="uaccess"\n'
+    'KERNEL=="event*", SUBSYSTEM=="input", ATTRS{name}=="8BitDo*", MODE="0666"\n'
+    'KERNEL=="event*", SUBSYSTEMS=="input", ATTRS{id/vendor}=="2dc8", MODE="0666"\n'
 )
 MODULES_LOAD_PATH = Path("/etc/modules-load.d/99-8bitdo-micro-uinput.conf")
 
