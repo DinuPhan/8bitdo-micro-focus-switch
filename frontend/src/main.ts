@@ -201,6 +201,11 @@ async function saveConfigToDisk() {
     await invoke("write_config", { content: serialized });
     rawTomlEditor.value = serialized;
     showToast("✓ Config saved & daemon reloaded!");
+    const origText = btnSaveAll.textContent;
+    btnSaveAll.textContent = "✓ Saved & Reloaded!";
+    setTimeout(() => {
+      btnSaveAll.textContent = origText;
+    }, 1500);
   } catch (err) {
     showToast(`Error saving config: ${err}`);
   }

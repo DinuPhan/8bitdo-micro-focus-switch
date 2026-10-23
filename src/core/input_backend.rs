@@ -383,21 +383,54 @@ impl VirtualKeyboard for WindowsVirtualKeyboard {
 
 /// Pure logic helper for evaluating a Windows low-level hook event (used by hook & tests).
 pub fn evaluate_win32_hook_event(
-    _vk_code: u32,
+    vk_code: u32,
     scan_code: u32,
     flags: u32,
     dw_extra_info: usize,
     w_param: u32,
     held_buttons: &mut std::collections::HashSet<String>,
 ) -> Option<(u16, i32)> {
+    evaluate_win32_hook_event_ex(
+        vk_code,
+        scan_code,
+        flags,
+        dw_extra_info,
+        w_param,
+        held_buttons,
+        true,
+    )
+}
+
+/// Evaluates a Windows low-level hook event with explicit control over factory key interception.
+pub fn evaluate_win32_hook_event_ex(
+    _vk_code: u32,
+    scan_code: u32,
+    flags: u32,
+    dw_extra_info: usize,
+    w_param: u32,
+    held_buttons: &mut std::collections::HashSet<String>,
+    allow_factory: bool,
+) -> Option<(u16, i32)> {
     if dw_extra_info == MAGIC_EXTRA_INFO || (flags & LLKHF_INJECTED) != 0 {
         return None;
     }
     let is_extended = (flags & LLKHF_EXTENDED) != 0;
     let raw_scancode = (scan_code & 0xFF) as u16;
-    let btn = *tables()
+
+    // Check sentinel mapping first (F13..F20, etc.)
+    let btn = if let Some(&b) = tables()
         .sentinel_win_scan_to_btn
-        .get(&(raw_scancode, is_extended))?;
+        .get(&(raw_scancode, is_extended))
+    {
+        b
+    } else if allow_factory {
+        *tables()
+            .factory_win_scan_to_btn
+            .get(&(raw_scancode, is_extended))?
+    } else {
+        return None;
+    };
+
     let factory_evdev = button_to_factory_evdev(btn)?;
     let is_up = w_param == WM_KEYUP || w_param == WM_SYSKEYUP;
     let val = if is_up {
@@ -410,6 +443,142 @@ pub fn evaluate_win32_hook_event(
         1
     };
     Some((factory_evdev, val))
+}
+
+#[cfg(target_os = "windows")]
+pub mod windows_hook {
+    use super::*;
+    use std::collections::HashSet;
+    use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+    use std::sync::Mutex;
+    use tokio::sync::mpsc;
+    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
+        TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
+        WM_QUIT,
+    };
+
+    static HOOK_SENDER: Mutex<Option<mpsc::UnboundedSender<(u16, i32)>>> = Mutex::new(None);
+    static HOOK_HELD: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+    static HOOK_HHOOK: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+    static ALLOW_FACTORY: AtomicBool = AtomicBool::new(true);
+
+    unsafe extern "system" fn ll_keyboard_proc(
+        n_code: i32,
+        w_param: WPARAM,
+        l_param: LPARAM,
+    ) -> LRESULT {
+        if n_code >= 0 {
+            let kb = *(l_param as *const KBDLLHOOKSTRUCT);
+            let mut held_guard = HOOK_HELD.lock().unwrap();
+            let held = held_guard.get_or_insert_with(HashSet::new);
+            let allow_fac = ALLOW_FACTORY.load(Ordering::Relaxed);
+
+            if let Some((evdev_code, val)) = evaluate_win32_hook_event_ex(
+                kb.vkCode,
+                kb.scanCode,
+                kb.flags,
+                kb.dwExtraInfo,
+                w_param as u32,
+                held,
+                allow_fac,
+            ) {
+                if let Ok(guard) = HOOK_SENDER.lock() {
+                    if let Some(ref tx) = *guard {
+                        let _ = tx.send((evdev_code, val));
+                    }
+                }
+                return 1; // Swallow the intercepted key!
+            }
+        }
+        let hook = HOOK_HHOOK.load(Ordering::Relaxed);
+        CallNextHookEx(hook as HHOOK, n_code, w_param, l_param)
+    }
+
+    pub struct WindowsHookGuard {
+        thread_id: u32,
+        join_handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl Drop for WindowsHookGuard {
+        fn drop(&mut self) {
+            if self.thread_id != 0 {
+                unsafe {
+                    PostThreadMessageW(self.thread_id, WM_QUIT, 0, 0);
+                }
+            }
+            if let Some(h) = self.join_handle.take() {
+                let _ = h.join();
+            }
+            if let Ok(mut guard) = HOOK_SENDER.lock() {
+                *guard = None;
+            }
+            if let Ok(mut held_guard) = HOOK_HELD.lock() {
+                *held_guard = None;
+            }
+        }
+    }
+
+    pub fn start_windows_hook(
+        key_tx: mpsc::UnboundedSender<(u16, i32)>,
+        allow_factory: bool,
+    ) -> Result<WindowsHookGuard, String> {
+        ALLOW_FACTORY.store(allow_factory, Ordering::Relaxed);
+        {
+            let mut guard = HOOK_SENDER.lock().unwrap();
+            *guard = Some(key_tx);
+        }
+
+        let (init_tx, init_rx) = std::sync::mpsc::channel::<Result<u32, String>>();
+
+        let join_handle = std::thread::Builder::new()
+            .name("win32-ll-hook".to_string())
+            .spawn(move || {
+                let tid = unsafe { GetCurrentThreadId() };
+                let hook = unsafe {
+                    SetWindowsHookExW(
+                        WH_KEYBOARD_LL,
+                        Some(ll_keyboard_proc),
+                        std::ptr::null_mut(),
+                        0,
+                    )
+                };
+                if hook.is_null() {
+                    let _ = init_tx.send(Err("SetWindowsHookExW returned null".to_string()));
+                    return;
+                }
+                HOOK_HHOOK.store(hook as _, Ordering::Relaxed);
+                let _ = init_tx.send(Ok(tid));
+
+                println!("[8bitdo-micro] Windows WH_KEYBOARD_LL hook active on thread {}", tid);
+
+                let mut msg: MSG = unsafe { std::mem::zeroed() };
+                while unsafe { GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) } > 0 {
+                    unsafe {
+                        TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                }
+
+                unsafe {
+                    UnhookWindowsHookEx(hook);
+                }
+                HOOK_HHOOK.store(std::ptr::null_mut(), Ordering::Relaxed);
+                println!("[8bitdo-micro] Windows WH_KEYBOARD_LL hook removed");
+            })
+            .map_err(|e| format!("Failed to spawn hook thread: {}", e))?;
+
+        let tid = init_rx
+            .recv()
+            .map_err(|_| "Hook thread crashed during initialization".to_string())??;
+
+        Ok(WindowsHookGuard {
+            thread_id: tid,
+            join_handle: Some(join_handle),
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------

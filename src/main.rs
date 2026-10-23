@@ -24,8 +24,45 @@ fn attach_parent_console() {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn setup_windows_file_logger() {
+    use std::fs::OpenOptions;
+    use std::os::windows::io::IntoRawHandle;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, SetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+    };
+
+    let log_dir = eightbitdo_micro_focus_switch::core::config::get_home_dir()
+        .join(".config")
+        .join("8bitdo-micro");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_path = log_dir.join("daemon.log");
+
+    if let Ok(file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        let raw_handle = file.into_raw_handle();
+        unsafe {
+            let current_out = GetStdHandle(STD_OUTPUT_HANDLE);
+            if current_out.is_null() || current_out == INVALID_HANDLE_VALUE {
+                SetStdHandle(STD_OUTPUT_HANDLE, raw_handle as _);
+            }
+            let current_err = GetStdHandle(STD_ERROR_HANDLE);
+            if current_err.is_null() || current_err == INVALID_HANDLE_VALUE {
+                SetStdHandle(STD_ERROR_HANDLE, raw_handle as _);
+            }
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+
+    #[cfg(target_os = "windows")]
+    setup_windows_file_logger();
 
     if !wants_gui(&args) {
         #[cfg(target_os = "windows")]

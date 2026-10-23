@@ -74,7 +74,104 @@ pub fn find_micro_input_devices_info() -> Vec<ControllerDeviceInfo> {
         matched.sort_by(|a, b| a.path.cmp(&b.path));
         return matched;
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::Input::{
+            GetRawInputDeviceInfoW, GetRawInputDeviceList, RAWINPUTDEVICELIST, RIDI_DEVICENAME,
+            RIM_TYPEHID, RIM_TYPEKEYBOARD,
+        };
+
+        let mut count = 0u32;
+        let list_size = std::mem::size_of::<RAWINPUTDEVICELIST>() as u32;
+        let ret = unsafe { GetRawInputDeviceList(std::ptr::null_mut(), &mut count, list_size) };
+        if ret == u32::MAX || count == 0 {
+            return Vec::new();
+        }
+
+        let mut devices = vec![
+            RAWINPUTDEVICELIST {
+                hDevice: std::ptr::null_mut(),
+                dwType: 0,
+            };
+            count as usize
+        ];
+
+        let actual = unsafe { GetRawInputDeviceList(devices.as_mut_ptr(), &mut count, list_size) };
+        if actual == u32::MAX {
+            return Vec::new();
+        }
+
+        let mut matched = Vec::new();
+        for dev in devices.iter().take(actual as usize) {
+            if dev.dwType != RIM_TYPEKEYBOARD && dev.dwType != RIM_TYPEHID {
+                continue;
+            }
+
+            let mut name_len = 0u32;
+            unsafe {
+                GetRawInputDeviceInfoW(
+                    dev.hDevice,
+                    RIDI_DEVICENAME,
+                    std::ptr::null_mut(),
+                    &mut name_len,
+                );
+            }
+            if name_len == 0 {
+                continue;
+            }
+
+            let mut name_buf = vec![0u16; name_len as usize];
+            let res = unsafe {
+                GetRawInputDeviceInfoW(
+                    dev.hDevice,
+                    RIDI_DEVICENAME,
+                    name_buf.as_mut_ptr() as *mut _,
+                    &mut name_len,
+                )
+            };
+            if res == u32::MAX || res == 0 {
+                continue;
+            }
+
+            let device_path = String::from_utf16_lossy(&name_buf)
+                .trim_matches('\0')
+                .to_string();
+
+            let path_upper = device_path.to_uppercase();
+            // Check 8BitDo Vendor ID: 0x2DC8 (or known controller models)
+            if path_upper.contains("VID_2DC8")
+                || path_upper.contains("2DC8:9021")
+                || path_upper.contains("8BITDO")
+            {
+                let model = if path_upper.contains("PID_9021") || path_upper.contains("9021") {
+                    "8BitDo Micro (Keyboard mode)".to_string()
+                } else if path_upper.contains("PID_9020") || path_upper.contains("9020") {
+                    "8BitDo Zero 2 (Keyboard mode)".to_string()
+                } else {
+                    "8BitDo Controller".to_string()
+                };
+
+                let prod = if path_upper.contains("PID_9021") {
+                    "0x9021".to_string()
+                } else if path_upper.contains("PID_9020") {
+                    "0x9020".to_string()
+                } else {
+                    "Unknown".to_string()
+                };
+
+                matched.push(ControllerDeviceInfo {
+                    path: device_path,
+                    name: "8BitDo Micro".to_string(),
+                    model,
+                    vendor: "0x2dc8".to_string(),
+                    product: prod,
+                    uniq: String::new(),
+                });
+            }
+        }
+        return matched;
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         Vec::new()
     }
@@ -117,6 +214,7 @@ pub struct FocusSwitchDaemon {
     pub event_seq: u64,
     pub keypress_event_path: Option<PathBuf>,
     pub ble_dirty: bool,
+    pub capture_factory_keys: bool,
 }
 
 impl FocusSwitchDaemon {
@@ -144,6 +242,7 @@ impl FocusSwitchDaemon {
             resolved_backend = "host".to_string();
         }
 
+        let capture_factory_keys = config.capture_factory_keys;
         let active_profile = config.resolve_profile_for_window("", "");
         let keypress_event_path = if config_path.is_some() {
             Some(
@@ -171,6 +270,7 @@ impl FocusSwitchDaemon {
             event_seq: 0,
             keypress_event_path,
             ble_dirty: true,
+            capture_factory_keys,
         };
         daemon.ensure_keypress_event_file();
         daemon
@@ -261,6 +361,7 @@ impl FocusSwitchDaemon {
             return;
         };
         if let Ok(new_cfg) = load_config(Some(path)) {
+            self.capture_factory_keys = new_cfg.capture_factory_keys;
             self.config = new_cfg;
             let new_prof = self.config.resolve_profile_for_window(
                 &self.active_window.window_class,
@@ -742,6 +843,29 @@ impl FocusSwitchDaemon {
                 }
             });
         }
+
+        #[cfg(target_os = "windows")]
+        let _win_hook_guard = if self.backend == "uinput" || self.backend == "host" || self.backend == "hybrid" {
+            let allow_fac = self.capture_factory_keys;
+            match crate::input_backend::windows_hook::start_windows_hook(key_tx.clone(), allow_fac) {
+                Ok(guard) => {
+                    println!(
+                        "[8bitdo-micro] Windows low-level keyboard hook active (capture_factory_keys={})",
+                        allow_fac
+                    );
+                    Some(guard)
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[8bitdo-micro] Failed to activate Windows low-level input hook: {}",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         // Create virtual keyboard output
         let mut ui: Box<dyn VirtualKeyboard> = {

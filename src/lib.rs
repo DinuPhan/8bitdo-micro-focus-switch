@@ -616,4 +616,48 @@ RIGHT = "Right"
         assert_eq!(code, 1);
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn test_windows_hook_evaluation() {
+        use crate::core::input_backend::{
+            evaluate_win32_hook_event, evaluate_win32_hook_event_ex, MAGIC_EXTRA_INFO,
+            LLKHF_INJECTED, WM_KEYDOWN, WM_KEYUP,
+        };
+        use std::collections::HashSet;
+
+        let mut held = HashSet::new();
+
+        // 1. Sentinel Key (F13 -> "A" -> factory evdev 34)
+        // F13 has scancode 0x64
+        let ev = evaluate_win32_hook_event(0, 0x64, 0, 0, WM_KEYDOWN, &mut held);
+        assert_eq!(ev, Some((34, 1)));
+        assert!(held.contains("A"));
+
+        // Repeat event
+        let ev_rep = evaluate_win32_hook_event(0, 0x64, 0, 0, WM_KEYDOWN, &mut held);
+        assert_eq!(ev_rep, Some((34, 2)));
+
+        // Key up
+        let ev_up = evaluate_win32_hook_event(0, 0x64, 0, 0, WM_KEYUP, &mut held);
+        assert_eq!(ev_up, Some((34, 0)));
+        assert!(!held.contains("A"));
+
+        // 2. Factory Key (G scancode 0x22 -> "A" -> factory evdev 34)
+        // With allow_factory = true
+        let ev_fac = evaluate_win32_hook_event_ex(0, 0x22, 0, 0, WM_KEYDOWN, &mut held, true);
+        assert_eq!(ev_fac, Some((34, 1)));
+        assert!(held.contains("A"));
+
+        // With allow_factory = false
+        held.clear();
+        let ev_fac_dis = evaluate_win32_hook_event_ex(0, 0x22, 0, 0, WM_KEYDOWN, &mut held, false);
+        assert_eq!(ev_fac_dis, None);
+
+        // 3. Ignored Injected Keys (anti feedback loop)
+        let ev_inj = evaluate_win32_hook_event(0, 0x64, LLKHF_INJECTED, 0, WM_KEYDOWN, &mut held);
+        assert_eq!(ev_inj, None);
+
+        let ev_magic = evaluate_win32_hook_event(0, 0x64, 0, MAGIC_EXTRA_INFO, WM_KEYDOWN, &mut held);
+        assert_eq!(ev_magic, None);
+    }
 }

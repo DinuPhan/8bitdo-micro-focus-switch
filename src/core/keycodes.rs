@@ -212,6 +212,26 @@ pub const SENTINEL_BUTTON_MAP: &[(&str, &str)] = &[
     ("RIGHT", "KP6"),
 ];
 
+/// Factory Keymap for 8BitDo Micro in Keyboard (K) mode when plugged via USB or standard BLE
+pub const FACTORY_BUTTON_MAP: &[(&str, &str)] = &[
+    ("A", "G"),
+    ("B", "J"),
+    ("X", "H"),
+    ("Y", "I"),
+    ("L", "K"),
+    ("R", "M"),
+    ("L2", "L"),
+    ("R2", "R"),
+    ("SELECT", "N"),
+    ("START", "O"),
+    ("STAR", "T"),
+    ("HOME", "S"),
+    ("UP", "C"),
+    ("DOWN", "D"),
+    ("LEFT", "E"),
+    ("RIGHT", "F"),
+];
+
 pub struct KeyTables {
     pub by_name: HashMap<String, &'static KeySpec>,
     pub by_hid: HashMap<u8, &'static KeySpec>,
@@ -220,6 +240,8 @@ pub struct KeyTables {
     pub by_mac_vk: HashMap<u16, &'static KeySpec>,
     pub sentinel_win_scan_to_btn: HashMap<(u16, bool), &'static str>,
     pub sentinel_mac_vk_to_btn: HashMap<u16, &'static str>,
+    pub factory_win_scan_to_btn: HashMap<(u16, bool), &'static str>,
+    pub factory_mac_vk_to_btn: HashMap<u16, &'static str>,
 }
 
 pub fn tables() -> &'static KeyTables {
@@ -259,6 +281,19 @@ pub fn tables() -> &'static KeyTables {
             }
         }
 
+        let mut factory_win_scan_to_btn = HashMap::new();
+        let mut factory_mac_vk_to_btn = HashMap::new();
+
+        for &(btn, key_name) in FACTORY_BUTTON_MAP {
+            if let Some(spec) = by_name.get(key_name) {
+                factory_win_scan_to_btn
+                    .insert((spec.win_raw_scancode(), spec.is_win_extended()), btn);
+                if let Some(mvk) = spec.mac_vk {
+                    factory_mac_vk_to_btn.insert(mvk, btn);
+                }
+            }
+        }
+
         KeyTables {
             by_name,
             by_hid,
@@ -267,6 +302,8 @@ pub fn tables() -> &'static KeyTables {
             by_mac_vk,
             sentinel_win_scan_to_btn,
             sentinel_mac_vk_to_btn,
+            factory_win_scan_to_btn,
+            factory_mac_vk_to_btn,
         }
     })
 }

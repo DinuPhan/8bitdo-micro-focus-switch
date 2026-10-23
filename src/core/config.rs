@@ -419,6 +419,7 @@ pub struct AppConfig {
     pub profiles: HashMap<String, ProfileConfig>,
     pub global_combos: IndexMap<ComboSet, ButtonAction>,
     pub global_buttons: HashMap<String, ButtonAction>,
+    pub capture_factory_keys: bool,
 }
 
 impl AppConfig {
@@ -854,6 +855,10 @@ pub fn load_config_from_str(raw_text: &str) -> Result<AppConfig, String> {
         .and_then(|g| g.get("combo_timeout_ms"))
         .and_then(|v| v.as_integer())
         .unwrap_or(50) as u64;
+    let capture_factory_keys = general
+        .and_then(|g| g.get("capture_factory_keys"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
     let mut profiles: HashMap<String, ProfileConfig> = HashMap::new();
 
@@ -1076,5 +1081,6 @@ pub fn load_config_from_str(raw_text: &str) -> Result<AppConfig, String> {
         profiles,
         global_combos,
         global_buttons,
+        capture_factory_keys,
     })
 }
