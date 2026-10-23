@@ -177,6 +177,37 @@ pub fn find_micro_input_devices_info() -> Vec<ControllerDeviceInfo> {
     }
 }
 
+pub fn check_linux_input_permissions_diagnostic() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/proc/bus/input/devices") {
+            for block in content.split("\n\n") {
+                let lower = block.to_lowercase();
+                if lower.contains("8bitdo") || lower.contains("2dc8") {
+                    for line in block.lines() {
+                        if line.starts_with("H: Handlers=") {
+                            for token in line.split_whitespace() {
+                                if token.starts_with("event") {
+                                    let dev_path = format!("/dev/input/{}", token);
+                                    if let Err(e) = std::fs::File::open(&dev_path) {
+                                        if e.kind() == std::io::ErrorKind::PermissionDenied {
+                                            return Some(format!(
+                                                "Controller is connected at {} but cannot be opened (Permission denied).\nTo fix, grant permissions via:\n  sudo usermod -aG input $USER\n  or run: 8bitdo-micro-focus-switch setup",
+                                                dev_path
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 async fn probe_controller_hardware_profile(
     ble_address: Option<&str>,
 ) -> Option<HashMap<u16, &'static str>> {
@@ -854,6 +885,13 @@ impl FocusSwitchDaemon {
                     }
 
                     let Some((path, mut dev)) = target_dev else {
+                        static WARNED_PERM: std::sync::atomic::AtomicBool =
+                            std::sync::atomic::AtomicBool::new(false);
+                        if !WARNED_PERM.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            if let Some(msg) = check_linux_input_permissions_diagnostic() {
+                                eprintln!("[8bitdo-micro] {}", msg);
+                            }
+                        }
                         tokio::select! {
                             _ = tokio::time::sleep(Duration::from_millis(1500)) => continue,
                             _ = stop_linux.changed() => break,

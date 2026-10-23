@@ -25,8 +25,8 @@ use crate::window_watcher::{find_hyprland_socket2, query_active_window};
 pub const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/99-8bitdo-micro-uinput.rules";
 pub const UDEV_RULE_CONTENT: &str = concat!(
     "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", MODE=\"0666\", OPTIONS+=\"static_node=uinput\"\n",
-    "KERNEL==\"event*\", SUBSYSTEM==\"input\", ATTRS{name}==\"8BitDo*\", MODE=\"0666\"\n",
-    "KERNEL==\"event*\", SUBSYSTEMS==\"input\", ATTRS{id/vendor}==\"2dc8\", MODE=\"0666\"\n"
+    "KERNEL==\"event*\", SUBSYSTEM==\"input\", ATTRS{name}==\"8BitDo*\", MODE=\"0666\", TAG+=\"uaccess\"\n",
+    "KERNEL==\"event*\", SUBSYSTEM==\"input\", ATTRS{id/vendor}==\"2dc8\", MODE=\"0666\", TAG+=\"uaccess\"\n"
 );
 pub const MODULES_LOAD_PATH: &str = "/etc/modules-load.d/99-8bitdo-micro-uinput.conf";
 
@@ -846,9 +846,13 @@ async fn cmd_discover(timeout: f64) -> Result<i32, String> {
     println!("1. Classic Bluetooth HID Devices (/dev/input/event*):");
     let devs = find_micro_input_devices();
     if devs.is_empty() {
-        println!("   • No 8BitDo Micro or Zero 2 paired & connected as HID keyboard right now.");
-        println!("     - 8BitDo Micro : ensure slider is set to 'K'");
-        println!("     - 8BitDo Zero 2: turn on by holding R + START");
+        if let Some(diag) = crate::core::daemon::check_linux_input_permissions_diagnostic() {
+            println!("   ⚠️  {}", diag.replace('\n', "\n   ⚠️  "));
+        } else {
+            println!("   • No 8BitDo Micro or Zero 2 paired & connected as HID keyboard right now.");
+            println!("     - 8BitDo Micro : ensure slider is set to 'K'");
+            println!("     - 8BitDo Zero 2: turn on by holding R + START");
+        }
     } else {
         for d in &devs {
             println!(
@@ -1417,17 +1421,20 @@ fn cmd_reload(config: Option<&Path>) -> Result<i32, String> {
 
 fn cmd_install_udev() -> Result<i32, String> {
     let (uinput_ok, _msg) = check_uinput_access();
-    if uinput_ok && Path::new(MODULES_LOAD_PATH).exists() {
-        println!("✓ /dev/uinput is already accessible and configured to load on boot!");
+    let rule_has_8bitdo = std::fs::read_to_string(UDEV_RULE_PATH)
+        .map(|s| s.contains("2dc8") && s.contains("8BitDo"))
+        .unwrap_or(false);
+    if uinput_ok && Path::new(MODULES_LOAD_PATH).exists() && rule_has_8bitdo {
+        println!("✓ /dev/uinput and controller evdev rules are already configured!");
         return Ok(0);
     }
 
     println!(
-        "Configuring /dev/uinput udev rule ({}) and boot module ({}) ...",
+        "Configuring /dev/uinput and /dev/input/event* udev rules ({}) and boot module ({}) ...",
         UDEV_RULE_PATH, MODULES_LOAD_PATH
     );
     let cmd = format!(
-        "echo '{}' | sudo tee {} > /dev/null && echo 'uinput' | sudo tee {} > /dev/null && sudo modprobe uinput && sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput",
+        "echo '{}' | sudo tee {} > /dev/null && echo 'uinput' | sudo tee {} > /dev/null && sudo modprobe uinput && sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput && sudo udevadm trigger --subsystem-match=input",
         UDEV_RULE_CONTENT.trim(),
         UDEV_RULE_PATH,
         MODULES_LOAD_PATH
@@ -1495,8 +1502,11 @@ fn cmd_setup(
 
     if !skip_udev {
         let (uinput_ok, _) = check_uinput_access();
-        if uinput_ok {
-            println!("✓ /dev/uinput permissions: OK");
+        let rule_has_8bitdo = std::fs::read_to_string(UDEV_RULE_PATH)
+            .map(|s| s.contains("2dc8") && s.contains("8BitDo"))
+            .unwrap_or(false);
+        if uinput_ok && rule_has_8bitdo {
+            println!("✓ /dev/uinput & controller evdev permissions: OK");
         } else {
             let _ = cmd_install_udev();
         }
