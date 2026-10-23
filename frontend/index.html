@@ -46,6 +46,11 @@
           </button>
         </div>
 
+        <!-- Quick Flash Button -->
+        <button id="btn-quick-flash" class="warning" title="Flash active profile directly to 8BitDo Micro over BLE">
+          ⚡ Flash to Controller
+        </button>
+
         <!-- Save Button -->
         <button id="btn-save-all" class="primary">
           💾 Save Changes
@@ -115,6 +120,9 @@
       <!-- 2. Combos Tab -->
       <section id="tab-combos" class="tab-pane">
         <div class="combos-panel">
+          <div id="combos-linux-notice" class="platform-notice" style="display:none; margin-bottom: 16px; padding: 12px 16px; background: rgba(137, 180, 250, 0.12); border-left: 4px solid var(--accent-blue); border-radius: 6px; font-size: 13px; color: var(--text);">
+            ℹ️ <strong>Hardware vs Daemon:</strong> Simultaneous multi-button combos are powered by the Linux background daemon. Hardware BLE profiles map 1-to-1 button keys directly in the controller's physical EEPROM memory.
+          </div>
           <div class="combos-header">
             <div>
               <h3>Simultaneous Multi-Button Combos</h3>

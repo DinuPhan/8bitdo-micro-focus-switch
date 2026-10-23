@@ -160,6 +160,20 @@ fn resolve_config_path() -> PathBuf {
     config::default_config_path()
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PlatformInfo {
+    pub os: String,
+    pub supports_focus_daemon: bool,
+}
+
+#[tauri::command]
+pub fn get_platform_info() -> PlatformInfo {
+    PlatformInfo {
+        os: std::env::consts::OS.to_string(),
+        supports_focus_daemon: cfg!(target_os = "linux"),
+    }
+}
+
 #[tauri::command]
 pub fn get_config_path() -> Result<String, String> {
     Ok(resolve_config_path().to_string_lossy().to_string())
@@ -220,32 +234,34 @@ pub fn reload_daemon(state: tauri::State<'_, DaemonState>) -> Result<String, Str
 
 #[tauri::command]
 pub fn toggle_daemon(start: bool, state: tauri::State<'_, DaemonState>) -> Result<bool, String> {
-    if start {
-        let (external, _) = external_daemon_running();
-        if external {
-            return Ok(true);
-        }
-        state.start()?;
-        Ok(true)
-    } else {
-        state.stop();
-        #[cfg(target_os = "linux")]
-        {
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (start, state);
+        return Err("The focus-switching daemon is exclusive to Linux (Hyprland/Wayland). On Windows/macOS, use the BLE Hardware Flasher to write bindings directly to your controller!".to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if start {
+            let (external, _) = external_daemon_running();
+            if external {
+                return Ok(true);
+            }
+            state.start()?;
+            Ok(true)
+        } else {
+            state.stop();
             if cli::is_systemd_service_active() {
                 let _ = std::process::Command::new("systemctl")
                     .args(["--user", "stop", "8bitdo-micro-focus-switch.service"])
                     .output();
             }
-        }
-        #[cfg(unix)]
-        {
             for pid in cli::find_daemon_pids() {
                 unsafe {
                     libc::kill(pid as i32, libc::SIGTERM);
                 }
             }
+            Ok(false)
         }
-        Ok(false)
     }
 }
 
@@ -311,18 +327,21 @@ pub fn run_gui() {
     tauri::Builder::default()
         .manage(DaemonState::default())
         .setup(|app| {
-            let (external, _) = external_daemon_running();
-            if !external {
-                if let Err(e) = app.state::<DaemonState>().start() {
-                    eprintln!("[8bitdo-micro] Could not start in-process daemon: {}", e);
+            #[cfg(target_os = "linux")]
+            {
+                let (external, _) = external_daemon_running();
+                if !external {
+                    if let Err(e) = app.state::<DaemonState>().start() {
+                        eprintln!("[8bitdo-micro] Could not start in-process daemon: {}", e);
+                    }
                 }
             }
 
             // Build Context Menu for System Tray
             let toggle = MenuItemBuilder::with_id("toggle", "Open Configurator").build(app)?;
-            let reload = MenuItemBuilder::with_id("reload", "Reload Daemon Config").build(app)?;
+            let reload = MenuItemBuilder::with_id("reload", "Reload Configuration").build(app)?;
             let separator = PredefinedMenuItem::separator(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "Quit 8BitDo Focus Switch").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "Quit 8BitDo Micro Manager").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .items(&[&toggle, &reload, &separator, &quit])
@@ -331,7 +350,11 @@ pub fn run_gui() {
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .tooltip("8BitDo Micro Focus Switch")
+                .tooltip(if cfg!(target_os = "linux") {
+                    "8BitDo Micro Focus Switch"
+                } else {
+                    "8BitDo Micro Hardware Manager"
+                })
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "toggle" => {
@@ -378,6 +401,7 @@ pub fn run_gui() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            get_platform_info,
             get_config_path,
             read_config,
             write_config,

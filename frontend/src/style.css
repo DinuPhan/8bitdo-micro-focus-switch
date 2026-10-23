@@ -217,6 +217,17 @@ button.danger {
   border-color: var(--accent-red);
 }
 
+button.warning {
+  background-color: rgba(249, 226, 175, 0.2);
+  color: #f9e2af;
+  border-color: #f9e2af;
+  font-weight: 700;
+}
+
+button.warning:hover {
+  background-color: rgba(249, 226, 175, 0.35);
+}
+
 /* Nav Tabs */
 .tab-bar {
   background-color: var(--bg-surface);

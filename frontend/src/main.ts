@@ -92,9 +92,11 @@ const btnAddCombo = document.getElementById("btn-add-combo") as HTMLButtonElemen
 
 // BLE
 const btnFlashBle = document.getElementById("btn-flash-ble") as HTMLButtonElement;
+const btnQuickFlash = document.getElementById("btn-quick-flash") as HTMLButtonElement | null;
 const blePresetSelect = document.getElementById("ble-preset-select") as HTMLSelectElement;
 const bleTurnSelect = document.getElementById("ble-turn-select") as HTMLSelectElement;
 const bleOutputBox = document.getElementById("ble-output-box") as HTMLDivElement;
+let platformInfo = { os: "linux", supports_focus_daemon: true };
 
 // Visual Mapper Zoom
 const mapperSvg = document.getElementById("mapper-svg") as SVGElement | null;
@@ -150,6 +152,48 @@ async function init() {
   }
 
   try {
+    platformInfo = await invoke<{ os: string; supports_focus_daemon: boolean }>("get_platform_info");
+    if (!platformInfo.supports_focus_daemon) {
+      const brandBadge = document.querySelector(".brand-badge") as HTMLElement | null;
+      if (brandBadge) {
+        brandBadge.textContent = "Hardware Manager";
+      }
+      if (btnPickWindow) {
+        btnPickWindow.style.display = "none";
+      }
+      const combosNotice = document.getElementById("combos-linux-notice") as HTMLElement | null;
+      if (combosNotice) {
+        combosNotice.style.display = "block";
+      }
+    }
+  } catch (err) {
+    console.debug("Could not get platform info:", err);
+  }
+
+  // Quick Flash button in top bar
+  btnQuickFlash?.addEventListener("click", async () => {
+    btnQuickFlash.disabled = true;
+    const origText = btnQuickFlash.textContent;
+    btnQuickFlash.textContent = "⏳ Flashing...";
+    showToast(`Connecting to 8BitDo Micro over BLE and flashing '${activeProfileName}'...`);
+    try {
+      await saveConfigToDisk();
+      const res = await invoke<string>("flash_preset", {
+        preset: activeProfileName,
+        turn: appConfig.profiles[activeProfileName]?.turn
+      });
+      showToast("✓ Flashed to controller over BLE!");
+      alert(`✓ Flashed profile '${activeProfileName}' to 8BitDo Micro hardware over BLE!\n\n${res}`);
+    } catch (err) {
+      showToast(`❌ BLE Flash failed: ${err}`);
+      alert(`❌ Flash error:\n${err}`);
+    } finally {
+      btnQuickFlash.disabled = false;
+      btnQuickFlash.textContent = origText;
+    }
+  });
+
+  try {
     const path = await invoke<string>("get_config_path");
     if (configPathLabel) configPathLabel.textContent = path;
   } catch (err) {
@@ -159,8 +203,10 @@ async function init() {
   await loadConfigFromDisk();
   await updateDaemonStatus();
 
-  // Periodic daemon check every 4 seconds
-  setInterval(updateDaemonStatus, 4000);
+  // Periodic daemon check every 4 seconds (Linux only)
+  if (platformInfo.supports_focus_daemon) {
+    setInterval(updateDaemonStatus, 4000);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -215,6 +261,12 @@ async function saveConfigToDisk() {
 // Daemon Management
 // ----------------------------------------------------------------------------
 async function updateDaemonStatus() {
+  if (!platformInfo.supports_focus_daemon) {
+    btnDaemonStatus.className = "success";
+    btnDaemonStatus.textContent = "📡 BLE Flasher Mode";
+    btnDaemonStatus.title = "Direct BLE hardware flasher active. Controller stores mappings in internal EEPROM.";
+    return;
+  }
   try {
     const status = await invoke<{ is_running: boolean; pid?: number }>("get_daemon_status");
     if (status.is_running) {
@@ -232,6 +284,11 @@ async function updateDaemonStatus() {
 }
 
 btnDaemonStatus.addEventListener("click", async () => {
+  if (!platformInfo.supports_focus_daemon) {
+    const bleTabBtn = document.querySelector("[data-tab='tab-ble']") as HTMLButtonElement | null;
+    bleTabBtn?.click();
+    return;
+  }
   try {
     const status = await invoke<{ is_running: boolean }>("get_daemon_status");
     if (status.is_running) {
@@ -250,6 +307,52 @@ btnDaemonStatus.addEventListener("click", async () => {
 // ----------------------------------------------------------------------------
 // Visual Mapper Rendering
 // ----------------------------------------------------------------------------
+function refreshBlePresetSelect() {
+  if (!blePresetSelect) return;
+  const currentVal = blePresetSelect.value;
+  blePresetSelect.innerHTML = "";
+
+  const optActive = document.createElement("option");
+  optActive.value = activeProfileName;
+  optActive.textContent = `★ Current Profile: ${activeProfileName}`;
+  blePresetSelect.appendChild(optActive);
+
+  const optGroupUser = document.createElement("optgroup");
+  optGroupUser.label = "Custom Profiles";
+  for (const name of Object.keys(appConfig.profiles)) {
+    if (name === activeProfileName || name === "global") continue;
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    optGroupUser.appendChild(opt);
+  }
+  if (optGroupUser.children.length > 0) {
+    blePresetSelect.appendChild(optGroupUser);
+  }
+
+  const optGroupBuiltin = document.createElement("optgroup");
+  optGroupBuiltin.label = "Built-in Presets";
+  const builtins = [
+    { id: "sentinel", label: "sentinel (F13..F20 + Numpad for host baseline)" },
+    { id: "factory", label: "factory (Default keyboard mode: c..t keys)" },
+    { id: "anki", label: "anki (Official Anki preset: 1, 2, 3, 4, Space)" },
+    { id: "supermemo", label: "supermemo (SuperMemo navigation preset)" },
+  ];
+  for (const b of builtins) {
+    const opt = document.createElement("option");
+    opt.value = b.id;
+    opt.textContent = b.label;
+    optGroupBuiltin.appendChild(opt);
+  }
+  blePresetSelect.appendChild(optGroupBuiltin);
+
+  if (currentVal && Array.from(blePresetSelect.options).some((o) => o.value === currentVal)) {
+    blePresetSelect.value = currentVal;
+  } else {
+    blePresetSelect.value = activeProfileName;
+  }
+}
+
 function updateActiveProfileView() {
   const profile = appConfig.profiles[activeProfileName];
   if (!profile) return;
@@ -258,6 +361,7 @@ function updateActiveProfileView() {
 
   renderSvgCallouts();
   renderCombosList();
+  refreshBlePresetSelect();
 }
 
 function renderSvgCallouts() {
