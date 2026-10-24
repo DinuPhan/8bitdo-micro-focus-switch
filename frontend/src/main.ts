@@ -3,6 +3,7 @@ import {
   BUTTON_METADATA,
   KEY_CATEGORIES,
   CONTROLLER_BUTTON_KEYS,
+  formatKeycap,
   getButtonMeta,
   rotateDpadButton,
 } from "./keyCatalog";
@@ -359,9 +360,59 @@ function updateActiveProfileView() {
 
   turnSelect.value = String(profile.turn || 0);
 
+  // Update matched window indicator
+  const labelMatched = document.getElementById("label-matched-window");
+  if (labelMatched && btnPickWindow) {
+    if (profile.matchClass) {
+      labelMatched.textContent = truncate(profile.matchClass, 18);
+      btnPickWindow.classList.add("is-matched");
+      btnPickWindow.title = `Matched to class: ${profile.matchClass}${profile.matchTitle ? ` (title: ${profile.matchTitle})` : ""}`;
+    } else {
+      labelMatched.textContent = "Match Window";
+      btnPickWindow.classList.remove("is-matched");
+      btnPickWindow.title = "Select from currently open OS windows to bind this profile";
+    }
+  }
+
   renderSvgCallouts();
   renderCombosList();
   refreshBlePresetSelect();
+}
+
+function setHoverState(key: string | null) {
+  if (!svgCalloutsLayer || !svgPinsLayer) return;
+
+  if (!key) {
+    svgCalloutsLayer.querySelectorAll(".callout-card-group, .leader-curve").forEach((el) => {
+      el.classList.remove("is-focused", "is-dimmed");
+    });
+    svgPinsLayer.querySelectorAll(".controller-pin-group").forEach((el) => {
+      el.classList.remove("is-focused", "is-dimmed");
+    });
+    return;
+  }
+
+  svgCalloutsLayer.querySelectorAll(".callout-card-group, .leader-curve").forEach((el) => {
+    const k = el.getAttribute("data-btn-key");
+    if (k === key) {
+      el.classList.add("is-focused");
+      el.classList.remove("is-dimmed");
+    } else {
+      el.classList.add("is-dimmed");
+      el.classList.remove("is-focused");
+    }
+  });
+
+  svgPinsLayer.querySelectorAll(".controller-pin-group").forEach((el) => {
+    const k = el.getAttribute("data-btn-key");
+    if (k === key) {
+      el.classList.add("is-focused");
+      el.classList.remove("is-dimmed");
+    } else {
+      el.classList.add("is-dimmed");
+      el.classList.remove("is-focused");
+    }
+  });
 }
 
 function renderSvgCallouts() {
@@ -394,50 +445,86 @@ function renderSvgCallouts() {
       ? `${meta.label}${logicalKey !== btnKey ? ` (➔ ${logicalKey})` : ""}: ${actionStr} — ${descText}${isInherited ? " [Inherited from global]" : ""}`
       : `${meta.label}${logicalKey !== btnKey ? ` (➔ ${logicalKey})` : ""}: ${actionStr}${isInherited ? " [Inherited from global]" : ""}`;
 
-    // 1. Draw glowing pin on controller image
     const [px, py] = meta.coord;
-    const pin = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    pin.setAttribute("cx", String(px));
-    pin.setAttribute("cy", String(py));
-    pin.setAttribute("r", "5");
-    pin.setAttribute("fill", meta.color);
-    pin.setAttribute("filter", "url(#glow)");
-
-    const pinTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    pinTitle.textContent = fullTooltip;
-    pin.appendChild(pinTitle);
-
-    pin.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openBindingModal("button", logicalKey);
-    });
-    svgPinsLayer.appendChild(pin);
-
-    // 2. Draw leader polyline
     const [e1x, e1y] = meta.elbow1;
     const [e2x, e2y] = meta.elbow2;
     const [tx, ty] = meta.target;
-    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    polyline.setAttribute(
-      "points",
-      `${px},${py} ${e1x},${e1y} ${e2x},${e2y} ${tx},${ty}`
-    );
-    polyline.setAttribute("fill", "none");
-    polyline.setAttribute("stroke", meta.color);
-    polyline.setAttribute("stroke-width", "1.8");
-    polyline.setAttribute("stroke-linecap", "round");
-    polyline.setAttribute("stroke-linejoin", "round");
-    polyline.setAttribute("opacity", "0.85");
-    svgCalloutsLayer.appendChild(polyline);
+
+    // 1. Draw smooth cubic Bezier leader path
+    const leaderPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    leaderPath.classList.add("leader-curve");
+    leaderPath.setAttribute("data-btn-key", btnKey);
+    leaderPath.setAttribute("d", `M ${px},${py} C ${e1x},${e1y} ${e2x},${e2y} ${tx},${ty}`);
+    leaderPath.setAttribute("fill", "none");
+    leaderPath.setAttribute("stroke", meta.color);
+    leaderPath.setAttribute("stroke-width", "1.6");
+    leaderPath.setAttribute("stroke-linecap", "round");
+    leaderPath.setAttribute("opacity", isInherited ? "0.45" : "0.75");
+    if (isInherited) {
+      leaderPath.setAttribute("stroke-dasharray", "4 3");
+    }
+    svgCalloutsLayer.appendChild(leaderPath);
+
+    // 2. Draw glowing pin on controller image
+    const pinGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    pinGroup.classList.add("controller-pin-group");
+    pinGroup.setAttribute("data-btn-key", btnKey);
+    pinGroup.style.cursor = "pointer";
+
+    // Pin outer halo
+    const pinHalo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    pinHalo.classList.add("pin-halo");
+    pinHalo.setAttribute("cx", String(px));
+    pinHalo.setAttribute("cy", String(py));
+    pinHalo.setAttribute("r", "8");
+    pinHalo.setAttribute("fill", "none");
+    pinHalo.setAttribute("stroke", meta.color);
+    pinHalo.setAttribute("stroke-width", "1.2");
+    pinHalo.setAttribute("opacity", "0.35");
+    pinGroup.appendChild(pinHalo);
+
+    // Pin solid core
+    const pinCore = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    pinCore.classList.add("pin-core");
+    pinCore.setAttribute("cx", String(px));
+    pinCore.setAttribute("cy", String(py));
+    pinCore.setAttribute("r", "4.5");
+    pinCore.setAttribute("fill", meta.color);
+    pinCore.setAttribute("filter", "url(#glow)");
+    pinGroup.appendChild(pinCore);
+
+    // Pin center white specular dot
+    const pinDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    pinDot.setAttribute("cx", String(px));
+    pinDot.setAttribute("cy", String(py));
+    pinDot.setAttribute("r", "1.5");
+    pinDot.setAttribute("fill", "#ffffff");
+    pinDot.setAttribute("opacity", "0.9");
+    pinGroup.appendChild(pinDot);
+
+    const pinTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    pinTitle.textContent = fullTooltip;
+    pinGroup.appendChild(pinTitle);
+
+    pinGroup.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openBindingModal("button", logicalKey);
+    });
+    pinGroup.addEventListener("mouseenter", () => setHoverState(btnKey));
+    pinGroup.addEventListener("mouseleave", () => setHoverState(null));
+
+    svgPinsLayer.appendChild(pinGroup);
 
     // 3. Draw Callout Card Group
     const cardGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
     cardGroup.classList.add("callout-card-group");
-    const bx = meta.side === "left" ? tx - 250 : tx;
-    const by = ty - 20;
+    cardGroup.setAttribute("data-btn-key", btnKey);
+    const cardW = 252;
+    const cardH = 42;
+    const bx = meta.side === "left" ? tx - cardW : tx;
+    const by = ty - cardH / 2;
     cardGroup.setAttribute("transform", `translate(${bx}, ${by})`);
 
-    // SVG Title tooltip for card hover
     const cardTitle = document.createElementNS("http://www.w3.org/2000/svg", "title");
     cardTitle.textContent = fullTooltip;
     cardGroup.appendChild(cardTitle);
@@ -445,30 +532,34 @@ function renderSvgCallouts() {
     // Card background
     const cardBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     cardBg.classList.add("card-bg");
-    cardBg.setAttribute("width", "250");
-    cardBg.setAttribute("height", "40");
+    cardBg.setAttribute("width", String(cardW));
+    cardBg.setAttribute("height", String(cardH));
     cardBg.setAttribute("rx", "8");
     cardBg.setAttribute("fill", "url(#card-grad)");
-    cardBg.setAttribute("stroke", isInherited ? "#45475a" : "#313244");
+    cardBg.setAttribute("stroke", isInherited ? "#3a3c54" : "rgba(255, 255, 255, 0.12)");
     cardBg.setAttribute("stroke-width", "1.2");
+    if (isInherited) {
+      cardBg.setAttribute("stroke-dasharray", "4 3");
+    }
     cardGroup.appendChild(cardBg);
 
-    // Button badge
+    // Button Badge on left of card
     const badgeBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     badgeBg.setAttribute("x", "6");
-    badgeBg.setAttribute("y", "7");
-    badgeBg.setAttribute("width", "68");
-    badgeBg.setAttribute("height", "26");
-    badgeBg.setAttribute("rx", "5");
+    badgeBg.setAttribute("y", "6");
+    badgeBg.setAttribute("width", "62");
+    badgeBg.setAttribute("height", "30");
+    badgeBg.setAttribute("rx", "6");
     badgeBg.setAttribute("fill", meta.color);
-    badgeBg.setAttribute("fill-opacity", "0.18");
+    badgeBg.setAttribute("fill-opacity", "0.16");
     badgeBg.setAttribute("stroke", meta.color);
+    badgeBg.setAttribute("stroke-opacity", "0.45");
     badgeBg.setAttribute("stroke-width", "1");
     cardGroup.appendChild(badgeBg);
 
     const badgeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    badgeText.setAttribute("x", "40");
-    badgeText.setAttribute("y", "24");
+    badgeText.setAttribute("x", "37");
+    badgeText.setAttribute("y", "25");
     badgeText.setAttribute("text-anchor", "middle");
     badgeText.setAttribute("fill", meta.color);
     badgeText.setAttribute("font-size", "11.5");
@@ -476,42 +567,161 @@ function renderSvgCallouts() {
     badgeText.textContent = meta.label;
     cardGroup.appendChild(badgeText);
 
-    if (hasDesc && descText) {
-      // Line 1: Action (e.g. "Space" or "Ctrl + Shift + D")
-      const txtMain = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      txtMain.setAttribute("x", "84");
-      txtMain.setAttribute("y", "18");
-      txtMain.setAttribute("fill", isInherited ? "#a6adc8" : "#cdd6f4");
-      txtMain.setAttribute("font-size", "12");
-      txtMain.setAttribute("font-weight", "bold");
-      txtMain.textContent = truncate(actionStr, 20);
-      cardGroup.appendChild(txtMain);
+    // Right Action Display Area
+    if (action?.execCmd) {
+      // Shell Execution Command badge
+      const keycapY = hasDesc ? 6 : 11;
+      const keycapH = hasDesc ? 17 : 20;
+      const textY = hasDesc ? 18 : 25;
 
-      // Line 2: Inline description / comment (e.g. "Start, Stop video")
-      const txtDesc = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      txtDesc.setAttribute("x", "84");
-      txtDesc.setAttribute("y", "32");
-      txtDesc.setAttribute("fill", "#a6adc8");
-      txtDesc.setAttribute("font-size", "10.5");
-      txtDesc.setAttribute("font-weight", "600");
-      txtDesc.textContent = truncate(descText, 25);
-      cardGroup.appendChild(txtDesc);
+      const cliRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      cliRect.setAttribute("x", "76");
+      cliRect.setAttribute("y", String(keycapY));
+      cliRect.setAttribute("width", "36");
+      cliRect.setAttribute("height", String(keycapH));
+      cliRect.setAttribute("rx", "4");
+      cliRect.setAttribute("fill", "rgba(166, 227, 161, 0.16)");
+      cliRect.setAttribute("stroke", "rgba(166, 227, 161, 0.45)");
+      cliRect.setAttribute("stroke-width", "0.9");
+      cardGroup.appendChild(cliRect);
+
+      const cliText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      cliText.setAttribute("x", "94");
+      cliText.setAttribute("y", String(textY));
+      cliText.setAttribute("text-anchor", "middle");
+      cliText.setAttribute("font-size", "9.5");
+      cliText.setAttribute("font-weight", "700");
+      cliText.setAttribute("fill", "#a6e3a1");
+      cliText.textContent = "EXEC";
+      cardGroup.appendChild(cliText);
+
+      const cmdText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      cmdText.setAttribute("x", "118");
+      cmdText.setAttribute("y", String(textY));
+      cmdText.setAttribute("font-size", "11");
+      cmdText.setAttribute("font-weight", "600");
+      cmdText.setAttribute("fill", "#f0f3fc");
+      cmdText.textContent = truncate(action.execCmd.replace(/^exec:/, ""), hasDesc ? 18 : 20);
+      cardGroup.appendChild(cmdText);
+
+      if (hasDesc && descText) {
+        const descEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        descEl.setAttribute("x", "76");
+        descEl.setAttribute("y", "34");
+        descEl.setAttribute("font-size", "10");
+        descEl.setAttribute("font-weight", "500");
+        descEl.setAttribute("fill", "#9fa6c3");
+        descEl.textContent = truncate(descText, 25);
+        cardGroup.appendChild(descEl);
+      }
+    } else if (action?.keys && action.keys.length > 0) {
+      // Keycap Badges
+      let curX = 76;
+      const keycapY = hasDesc ? 6 : 11;
+      const keycapH = hasDesc ? 17 : 20;
+      const textY = hasDesc ? 18 : 25;
+
+      for (let i = 0; i < action.keys.length; i++) {
+        const kName = action.keys[i];
+        const info = formatKeycap(kName);
+        const capW = Math.max(22, Math.min(68, info.label.length * 6.8 + 12));
+
+        if (curX + capW > 244) {
+          const dotText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          dotText.setAttribute("x", String(curX + 2));
+          dotText.setAttribute("y", String(textY));
+          dotText.setAttribute("font-size", "11");
+          dotText.setAttribute("font-weight", "bold");
+          dotText.setAttribute("fill", "#6c7086");
+          dotText.textContent = "+…";
+          cardGroup.appendChild(dotText);
+          break;
+        }
+
+        const capRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        capRect.setAttribute("x", String(curX));
+        capRect.setAttribute("y", String(keycapY));
+        capRect.setAttribute("width", String(capW));
+        capRect.setAttribute("height", String(keycapH));
+        capRect.setAttribute("rx", "4");
+        capRect.setAttribute(
+          "fill",
+          info.isModifier ? "rgba(137, 180, 250, 0.16)" : "rgba(255, 255, 255, 0.08)"
+        );
+        capRect.setAttribute(
+          "stroke",
+          info.isModifier ? "rgba(137, 180, 250, 0.42)" : "rgba(255, 255, 255, 0.16)"
+        );
+        capRect.setAttribute("stroke-width", "0.9");
+        cardGroup.appendChild(capRect);
+
+        const capText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        capText.setAttribute("x", String(curX + capW / 2));
+        capText.setAttribute("y", String(textY));
+        capText.setAttribute("text-anchor", "middle");
+        capText.setAttribute("font-size", info.isModifier ? "10" : "11");
+        capText.setAttribute("font-weight", info.isModifier ? "600" : "700");
+        capText.setAttribute("fill", info.isModifier ? "#89b4fa" : "#f0f3fc");
+        capText.textContent = info.label;
+        cardGroup.appendChild(capText);
+
+        curX += capW;
+
+        if (i < action.keys.length - 1 && curX + 10 < 244) {
+          const plus = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          plus.setAttribute("x", String(curX + 4));
+          plus.setAttribute("y", String(textY));
+          plus.setAttribute("font-size", "10");
+          plus.setAttribute("font-weight", "600");
+          plus.setAttribute("fill", "#6c7086");
+          plus.textContent = "+";
+          cardGroup.appendChild(plus);
+          curX += 9;
+        }
+      }
+
+      if (hasDesc && descText) {
+        const descEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        descEl.setAttribute("x", "76");
+        descEl.setAttribute("y", "34");
+        descEl.setAttribute("font-size", "10");
+        descEl.setAttribute("font-weight", "500");
+        descEl.setAttribute("fill", "#9fa6c3");
+        descEl.textContent = truncate(descText, 25);
+        cardGroup.appendChild(descEl);
+      }
     } else {
-      // Single centered line: Action
-      const txtMain = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      txtMain.setAttribute("x", "84");
-      txtMain.setAttribute("y", "25");
-      txtMain.setAttribute("fill", isInherited ? "#a6adc8" : (actionStr === "None" ? "#6c7086" : "#cdd6f4"));
-      txtMain.setAttribute("font-size", "13");
-      txtMain.setAttribute("font-weight", "bold");
-      txtMain.textContent = truncate(actionStr, 22);
-      cardGroup.appendChild(txtMain);
+      // None / Unmapped
+      const emptyRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      emptyRect.setAttribute("x", "76");
+      emptyRect.setAttribute("y", "12");
+      emptyRect.setAttribute("width", "50");
+      emptyRect.setAttribute("height", "18");
+      emptyRect.setAttribute("rx", "4");
+      emptyRect.setAttribute("fill", "none");
+      emptyRect.setAttribute("stroke", "#45475a");
+      emptyRect.setAttribute("stroke-dasharray", "3 3");
+      emptyRect.setAttribute("stroke-width", "0.9");
+      cardGroup.appendChild(emptyRect);
+
+      const emptyText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      emptyText.setAttribute("x", "101");
+      emptyText.setAttribute("y", "25");
+      emptyText.setAttribute("text-anchor", "middle");
+      emptyText.setAttribute("font-size", "10.5");
+      emptyText.setAttribute("font-weight", "500");
+      emptyText.setAttribute("fill", "#6c7086");
+      emptyText.textContent = "None";
+      cardGroup.appendChild(emptyText);
     }
 
     cardGroup.addEventListener("click", (e) => {
       e.stopPropagation();
       openBindingModal("button", logicalKey);
     });
+    cardGroup.addEventListener("mouseenter", () => setHoverState(btnKey));
+    cardGroup.addEventListener("mouseleave", () => setHoverState(null));
+
     svgCalloutsLayer.appendChild(cardGroup);
   }
 }

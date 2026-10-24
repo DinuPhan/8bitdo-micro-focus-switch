@@ -7,25 +7,83 @@
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
-    <!-- App Header -->
-    <header class="app-header">
-      <div class="brand-section">
-        <span class="brand-title">8BitDo Micro</span>
-        <span class="brand-badge">Focus Switch</span>
+    <!-- Layer 1: App Top Bar -->
+    <header class="app-topbar">
+      <!-- Left: Brand & Status -->
+      <div class="topbar-left">
+        <div class="brand-section">
+          <span class="brand-icon">🎮</span>
+          <span class="brand-title">8BitDo Micro</span>
+          <span class="brand-badge">Focus Switch</span>
+          <span class="brand-version">v0.4.0</span>
+        </div>
+        <div class="status-indicator-group">
+          <button id="btn-daemon-status" class="status-pill success" title="Click to restart or verify daemon">
+            🟢 Daemon Running
+          </button>
+        </div>
       </div>
 
-      <div class="controls-section">
-        <!-- Profile Dropdown -->
-        <div class="control-group">
-          <label class="control-label" for="profile-select">Profile:</label>
-          <select id="profile-select"></select>
-          <button id="btn-new-profile" title="Create a new profile">+ New</button>
-          <button id="btn-delete-profile" class="danger" title="Delete current profile">Delete</button>
-        </div>
+      <!-- Center: Segmented Navigation Tabs -->
+      <nav class="topbar-nav tab-bar">
+        <button class="tab-btn active" data-tab="tab-mapper">
+          <span class="tab-icon">🎮</span>
+          <span>Visual Mapper</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-combos">
+          <span class="tab-icon">⚡</span>
+          <span>Combos & Chords</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-ble">
+          <span class="tab-icon">📡</span>
+          <span>BLE Hardware</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-toml">
+          <span class="tab-icon">📝</span>
+          <span>Raw TOML</span>
+        </button>
+      </nav>
 
-        <!-- D-Pad Turn -->
-        <div class="control-group">
-          <label class="control-label" for="turn-select">D-Pad:</label>
+      <!-- Right: Primary Global Actions -->
+      <div class="topbar-right">
+        <button id="btn-quick-flash" class="action-btn warning-ghost" title="Flash active profile directly into 8BitDo Micro EEPROM over BLE">
+          <span class="btn-icon">⚡</span>
+          <span>Flash Hardware</span>
+        </button>
+        <button id="btn-save-all" class="action-btn primary" title="Save all profile changes to disk (Ctrl+S)">
+          <span class="btn-icon">💾</span>
+          <span>Save Changes</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Layer 2: Profile Context Bar -->
+    <section class="profile-toolbar" id="profile-context-bar">
+      <div class="profile-toolbar-left">
+        <div class="toolbar-label">
+          <span class="label-muted">Profile:</span>
+        </div>
+        <div class="profile-selector-wrap">
+          <select id="profile-select"></select>
+        </div>
+        <button id="btn-new-profile" class="btn-sm secondary" title="Create a new profile">+ New</button>
+        <button id="btn-delete-profile" class="btn-sm danger" title="Delete current profile">Delete</button>
+      </div>
+
+      <div class="profile-toolbar-right">
+        <!-- Window Matcher Button -->
+        <button id="btn-pick-window" class="btn-sm window-match-btn" title="Match profile to active Hyprland / OS window">
+          <span class="btn-icon">🪟</span>
+          <span id="label-matched-window">Match Window</span>
+        </button>
+
+        <div class="toolbar-divider"></div>
+
+        <!-- D-Pad Turn Selector -->
+        <div class="dpad-turn-group">
+          <label class="toolbar-label" for="turn-select">
+            <span class="label-muted">D-Pad:</span>
+          </label>
           <select id="turn-select">
             <option value="0">0° (Horizontal)</option>
             <option value="90">90° CW (Vertical)</option>
@@ -33,38 +91,8 @@
             <option value="270">270° CW</option>
           </select>
         </div>
-
-        <!-- Window Matcher -->
-        <button id="btn-pick-window" title="Select from currently active windows">
-          🪟 Match Window
-        </button>
-
-        <!-- Daemon Status & Controls -->
-        <div class="control-group">
-          <button id="btn-daemon-status" class="success" title="Click to restart daemon">
-            🟢 Daemon Running
-          </button>
-        </div>
-
-        <!-- Quick Flash Button -->
-        <button id="btn-quick-flash" class="warning" title="Flash active profile directly to 8BitDo Micro over BLE">
-          ⚡ Flash to Controller
-        </button>
-
-        <!-- Save Button -->
-        <button id="btn-save-all" class="primary">
-          💾 Save Changes
-        </button>
       </div>
-    </header>
-
-    <!-- Tab Bar -->
-    <nav class="tab-bar">
-      <button class="tab-btn active" data-tab="tab-mapper">🎮 Visual Mapper</button>
-      <button class="tab-btn" data-tab="tab-combos">⚡ Combos & Chords</button>
-      <button class="tab-btn" data-tab="tab-ble">📡 BLE Hardware Flashing</button>
-      <button class="tab-btn" data-tab="tab-toml">📝 Raw TOML</button>
-    </nav>
+    </section>
 
     <!-- App Body / Tabs -->
     <main class="app-body">
@@ -78,17 +106,29 @@
             preserveAspectRatio="xMidYMid meet"
           >
             <!-- Background & Definitions -->
-            <rect x="15" y="72" width="1170" height="492" fill="#11111b" rx="16" />
+            <rect x="15" y="72" width="1170" height="492" fill="#0d0e17" rx="16" />
             <defs>
               <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation="3.5" result="blur" />
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
+              <radialGradient id="controller-backlight" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#89b4fa" stop-opacity="0.14" />
+                <stop offset="60%" stop-color="#89b4fa" stop-opacity="0.03" />
+                <stop offset="100%" stop-color="#0d0e17" stop-opacity="0" />
+              </radialGradient>
               <linearGradient id="card-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#1e1e2e" />
-                <stop offset="100%" stop-color="#181825" />
+                <stop offset="0%" stop-color="#181928" />
+                <stop offset="100%" stop-color="#11121d" />
+              </linearGradient>
+              <linearGradient id="card-grad-hover" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#24263e" />
+                <stop offset="100%" stop-color="#191a2c" />
               </linearGradient>
             </defs>
+
+            <!-- Ambient Controller Backlight Halo -->
+            <ellipse cx="600" cy="384" rx="360" ry="190" fill="url(#controller-backlight)" />
 
             <!-- Controller Image -->
             <image

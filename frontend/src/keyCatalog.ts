@@ -251,3 +251,63 @@ export const KEY_CATEGORIES: Record<string, string[]> = {
     "SLASH",
   ],
 };
+
+export interface KeycapInfo {
+  label: string;
+  isModifier: boolean;
+}
+
+export function formatKeycap(rawKey: string): KeycapInfo {
+  const clean = (rawKey || "").trim().toUpperCase();
+  const modMap: Record<string, string> = {
+    LEFTCTRL: "⌃ Ctrl",
+    RIGHTCTRL: "⌃ RCtrl",
+    CTRL: "⌃ Ctrl",
+    LEFTSHIFT: "⇧ Shift",
+    RIGHTSHIFT: "⇧ RShift",
+    SHIFT: "⇧ Shift",
+    LEFTALT: "⌥ Alt",
+    RIGHTALT: "⌥ AltGr",
+    ALT: "⌥ Alt",
+    LEFTMETA: "⌘ Super",
+    RIGHTMETA: "⌘ Super",
+    SUPER: "⌘ Super",
+    META: "⌘ Super",
+  };
+  if (modMap[clean]) {
+    return { label: modMap[clean], isModifier: true };
+  }
+  const specialMap: Record<string, string> = {
+    SPACE: "␣ Space",
+    ENTER: "↵ Enter",
+    BACKSPACE: "⌫",
+    TAB: "⇥ Tab",
+    ESC: "Esc",
+    ESCAPE: "Esc",
+    DELETE: "Del",
+    PAGEUP: "⇞ PgUp",
+    PAGEDOWN: "⇟ PgDn",
+    UP: "▲ Up",
+    DOWN: "▼ Down",
+    LEFT: "◀ Left",
+    RIGHT: "▶ Right",
+    HOME: "Home",
+    END: "End",
+    INSERT: "Ins",
+    CAPSLOCK: "Caps",
+    PLAYPAUSE: "⏯ Play",
+    VOLUMEUP: "🔊 Vol+",
+    VOLUMEDOWN: "🔉 Vol-",
+    MUTE: "🔇 Mute",
+    NEXTSONG: "⏭ Next",
+    PREVIOUSSONG: "⏮ Prev",
+  };
+  if (specialMap[clean]) {
+    return { label: specialMap[clean], isModifier: false };
+  }
+  return {
+    label: clean.length <= 3 ? clean : clean.charAt(0) + clean.slice(1).toLowerCase(),
+    isModifier: false,
+  };
+}
+
