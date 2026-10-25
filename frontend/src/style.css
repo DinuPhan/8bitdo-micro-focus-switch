@@ -525,19 +525,22 @@ svg#mapper-svg {
   transform-origin: center center;
 }
 
-/* Smooth Bezier Curves */
+/* Technical Angled Leader Lines (Gãy khúc) */
+.leader-line,
 .leader-curve {
   transition: stroke-width 0.18s cubic-bezier(0.16, 1, 0.3, 1),
               opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
               filter 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.leader-line.is-focused,
 .leader-curve.is-focused {
   stroke-width: 2.8px !important;
   opacity: 1 !important;
   filter: drop-shadow(0 0 5px var(--accent-blue));
 }
 
+.leader-line.is-dimmed,
 .leader-curve.is-dimmed {
   opacity: 0.14 !important;
 }

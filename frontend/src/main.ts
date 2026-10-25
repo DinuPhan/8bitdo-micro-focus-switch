@@ -383,7 +383,7 @@ function setHoverState(key: string | null) {
   if (!svgCalloutsLayer || !svgPinsLayer) return;
 
   if (!key) {
-    svgCalloutsLayer.querySelectorAll(".callout-card-group, .leader-curve").forEach((el) => {
+    svgCalloutsLayer.querySelectorAll(".callout-card-group, .leader-line, .leader-curve").forEach((el) => {
       el.classList.remove("is-focused", "is-dimmed");
     });
     svgPinsLayer.querySelectorAll(".controller-pin-group").forEach((el) => {
@@ -392,7 +392,7 @@ function setHoverState(key: string | null) {
     return;
   }
 
-  svgCalloutsLayer.querySelectorAll(".callout-card-group, .leader-curve").forEach((el) => {
+  svgCalloutsLayer.querySelectorAll(".callout-card-group, .leader-line, .leader-curve").forEach((el) => {
     const k = el.getAttribute("data-btn-key");
     if (k === key) {
       el.classList.add("is-focused");
@@ -450,20 +450,24 @@ function renderSvgCallouts() {
     const [e2x, e2y] = meta.elbow2;
     const [tx, ty] = meta.target;
 
-    // 1. Draw smooth cubic Bezier leader path
-    const leaderPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    leaderPath.classList.add("leader-curve");
-    leaderPath.setAttribute("data-btn-key", btnKey);
-    leaderPath.setAttribute("d", `M ${px},${py} C ${e1x},${e1y} ${e2x},${e2y} ${tx},${ty}`);
-    leaderPath.setAttribute("fill", "none");
-    leaderPath.setAttribute("stroke", meta.color);
-    leaderPath.setAttribute("stroke-width", "1.6");
-    leaderPath.setAttribute("stroke-linecap", "round");
-    leaderPath.setAttribute("opacity", isInherited ? "0.45" : "0.75");
+    // 1. Draw angled elbow leader polyline (đường gãy khúc kỹ thuật)
+    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    polyline.classList.add("leader-line");
+    polyline.setAttribute("data-btn-key", btnKey);
+    polyline.setAttribute(
+      "points",
+      `${px},${py} ${e1x},${e1y} ${e2x},${e2y} ${tx},${ty}`
+    );
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", meta.color);
+    polyline.setAttribute("stroke-width", "1.8");
+    polyline.setAttribute("stroke-linecap", "round");
+    polyline.setAttribute("stroke-linejoin", "round");
+    polyline.setAttribute("opacity", isInherited ? "0.45" : "0.85");
     if (isInherited) {
-      leaderPath.setAttribute("stroke-dasharray", "4 3");
+      polyline.setAttribute("stroke-dasharray", "4 3");
     }
-    svgCalloutsLayer.appendChild(leaderPath);
+    svgCalloutsLayer.appendChild(polyline);
 
     // 2. Draw glowing pin on controller image
     const pinGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
