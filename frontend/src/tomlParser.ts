@@ -19,6 +19,7 @@ export interface AppConfigData {
     fallbackProfile: string;
     backend: string;
     comboTimeoutMs: number;
+    emitOsdEvents?: boolean;
   };
   profiles: Record<string, ProfileData>;
 }
@@ -29,6 +30,7 @@ export function parseProfilesToml(tomlText: string): AppConfigData {
       fallbackProfile: "agy",
       backend: "uinput",
       comboTimeoutMs: 50,
+      emitOsdEvents: true,
     },
     profiles: {},
   };
@@ -117,6 +119,7 @@ export function parseProfilesToml(tomlText: string): AppConfigData {
       if (rawKey === "fallback_profile") result.general.fallbackProfile = String(parsedVal);
       else if (rawKey === "backend") result.general.backend = String(parsedVal);
       else if (rawKey === "combo_timeout_ms") result.general.comboTimeoutMs = Number(parsedVal) || 50;
+      else if (rawKey === "emit_osd_events") result.general.emitOsdEvents = parsedVal === true || parsedVal === "true";
     } else if (currentProfile && result.profiles[currentProfile]) {
       const prof = result.profiles[currentProfile];
       if (currentSub === "buttons") {
@@ -158,6 +161,7 @@ export function serializeProfilesToml(config: AppConfigData): string {
     `fallback_profile = "${config.general.fallbackProfile}"`,
     `backend = "${config.general.backend}"`,
     `combo_timeout_ms = ${config.general.comboTimeoutMs}`,
+    `emit_osd_events = ${config.general.emitOsdEvents !== false}`,
     "",
   ];
 

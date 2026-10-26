@@ -3,7 +3,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
@@ -282,6 +282,21 @@ pub struct FocusSwitchDaemon {
     pub dynamic_button_map: HashMap<u16, &'static str>,
 }
 
+pub fn resolve_keypress_event_path() -> PathBuf {
+    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        let trimmed = runtime_dir.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed)
+                .join("8bitdo-micro")
+                .join("last_keypress.json");
+        }
+    }
+    get_home_dir()
+        .join(".cache")
+        .join("8bitdo-micro")
+        .join("last_keypress.json")
+}
+
 impl FocusSwitchDaemon {
     pub fn new(
         config: AppConfig,
@@ -310,12 +325,7 @@ impl FocusSwitchDaemon {
         let capture_factory_keys = config.capture_factory_keys;
         let active_profile = config.resolve_profile_for_window("", "");
         let keypress_event_path = if config_path.is_some() {
-            Some(
-                get_home_dir()
-                    .join(".cache")
-                    .join("8bitdo-micro")
-                    .join("last_keypress.json"),
-            )
+            Some(resolve_keypress_event_path())
         } else {
             None
         };
@@ -349,13 +359,88 @@ impl FocusSwitchDaemon {
         evdev_to_button(keycode)
     }
 
-    fn ensure_keypress_event_file(&self) {
-        if let Some(ref p) = self.keypress_event_path {
-            if let Some(parent) = p.parent() {
+    pub fn ensure_keypress_event_file(&self) {
+        let Some(ref p) = self.keypress_event_path else {
+            return;
+        };
+        if let Some(parent) = p.parent() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
+                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+            }
+            #[cfg(not(unix))]
+            {
                 let _ = fs::create_dir_all(parent);
             }
-            if !p.exists() {
+        }
+        if !p.exists() {
+            #[cfg(unix)]
+            {
+                use std::io::Write;
+                use std::os::unix::fs::OpenOptionsExt;
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(mut f) = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(p)
+                {
+                    let _ = f.write_all(b"{\"seq\": 0}\n");
+                    let _ = fs::set_permissions(p, fs::Permissions::from_mode(0o600));
+                }
+            }
+            #[cfg(not(unix))]
+            {
                 let _ = fs::write(p, "{\"seq\": 0}\n");
+            }
+        } else {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(p, fs::Permissions::from_mode(0o600));
+            }
+        }
+    }
+
+    fn write_event_file_atomic(&self, target_path: &Path, content: &[u8]) {
+        let parent = match target_path.parent() {
+            Some(p) => p,
+            None => return,
+        };
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::DirBuilderExt;
+            use std::os::unix::fs::OpenOptionsExt;
+            use std::os::unix::fs::PermissionsExt;
+
+            let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+
+            let pid = std::process::id();
+            let tmp_path = parent.join(format!(".last_keypress.json.tmp.{}", pid));
+            let mut opts = fs::OpenOptions::new();
+            opts.write(true).create(true).truncate(true).mode(0o600);
+            if let Ok(mut file) = opts.open(&tmp_path) {
+                let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600));
+                if file.write_all(content).is_ok() && file.flush().is_ok() {
+                    drop(file);
+                    let _ = fs::rename(&tmp_path, target_path);
+                    return;
+                }
+            }
+            let _ = fs::remove_file(&tmp_path);
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = fs::create_dir_all(parent);
+            let pid = std::process::id();
+            let tmp_path = parent.join(format!(".last_keypress.json.tmp.{}", pid));
+            if fs::write(&tmp_path, content).is_ok() {
+                let _ = fs::rename(&tmp_path, target_path);
             }
         }
     }
@@ -388,6 +473,9 @@ impl FocusSwitchDaemon {
     }
 
     fn record_key_event(&mut self, buttons: &[String], action: &ButtonAction, is_combo: bool) {
+        if !self.config.emit_osd_events {
+            return;
+        }
         let Some(ref path) = self.keypress_event_path else {
             return;
         };
@@ -405,15 +493,10 @@ impl FocusSwitchDaemon {
         } else {
             action.keys.join("+")
         };
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| (d.as_secs_f64() * 1000.0).round() / 1000.0)
-            .unwrap_or(0.0);
         let is_global_layer = is_combo && clean_buttons.iter().any(|b| b == "L2");
 
         let payload = serde_json::json!({
             "seq": self.event_seq,
-            "timestamp": ts,
             "button": clean_buttons.join("+"),
             "buttons": clean_buttons,
             "key": raw_key,
@@ -425,7 +508,7 @@ impl FocusSwitchDaemon {
         });
         if let Ok(mut s) = serde_json::to_string(&payload) {
             s.push('\n');
-            let _ = fs::write(path, s);
+            self.write_event_file_atomic(path, s.as_bytes());
         }
     }
 

@@ -710,4 +710,64 @@ buttons.A = "SPACE"
         // Expect SPACE (evdev 57) up
         assert!(ui.0.iter().any(|&(_, c, v)| c == 57 && v == 0));
     }
+
+    #[test]
+    fn test_keypress_event_security_permissions_and_payload() {
+        let temp_dir = std::env::temp_dir().join(format!("8bitdo-sec-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        let event_file = temp_dir.join("8bitdo-micro").join("last_keypress.json");
+
+        let toml_str = r#"
+[general]
+fallback_profile = "test"
+backend = "uinput"
+emit_osd_events = true
+
+[profiles.test]
+description = "Test Security"
+buttons.A = "SPACE"
+"#;
+        let cfg = load_config_from_str(toml_str).unwrap();
+        let mut d = FocusSwitchDaemon::new(cfg, None, None, None);
+        d.keypress_event_path = Some(event_file.clone());
+        d.ensure_keypress_event_file();
+
+        struct MockUi;
+        impl crate::core::input_backend::VirtualKeyboard for MockUi {
+            fn write(&mut self, _etype: u16, _code: u16, _val: i32) {}
+            fn syn(&mut self) {}
+            fn close(&mut self) {}
+        }
+        let mut ui = MockUi;
+        // Press button A (Factory G is evdev 34)
+        d.handle_key_event(&mut ui, 34, 1);
+
+        assert!(event_file.exists());
+        let content = fs::read_to_string(&event_file).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(parsed["button"], "A");
+        assert_eq!(parsed["key"], "SPACE");
+        assert!(parsed.get("timestamp").is_none(), "timestamp must be omitted for privacy");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let file_meta = fs::metadata(&event_file).unwrap();
+            let file_mode = file_meta.permissions().mode() & 0o777;
+            assert_eq!(file_mode, 0o600, "Event file must have mode 0600");
+
+            let parent_meta = fs::metadata(event_file.parent().unwrap()).unwrap();
+            let parent_mode = parent_meta.permissions().mode() & 0o777;
+            assert_eq!(parent_mode, 0o700, "Parent directory must have mode 0700");
+        }
+
+        // Test emit_osd_events = false
+        d.config.emit_osd_events = false;
+        let _ = fs::remove_file(&event_file);
+        d.handle_key_event(&mut ui, 34, 1);
+        assert!(!event_file.exists(), "Event file must not be written when emit_osd_events is false");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 }

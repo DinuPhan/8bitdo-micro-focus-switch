@@ -420,6 +420,7 @@ pub struct AppConfig {
     pub global_combos: IndexMap<ComboSet, ButtonAction>,
     pub global_buttons: HashMap<String, ButtonAction>,
     pub capture_factory_keys: bool,
+    pub emit_osd_events: bool,
 }
 
 impl AppConfig {
@@ -488,6 +489,9 @@ fallback_profile = "agy"
 backend = "uinput"
 # combo_timeout_ms: Detection window (in ms) for simultaneous button combinations (default: 50)
 combo_timeout_ms = 50
+# emit_osd_events: Broadcast keypress events to $XDG_RUNTIME_DIR/8bitdo-micro/last_keypress.json
+# for the OmaBoy OSD overlay (default: true). Set to false to disable disk stream entirely.
+emit_osd_events = true
 
 # =============================================================================
 # Global Base Profile ('global' or 'all')
@@ -809,11 +813,24 @@ pub fn ensure_default_config(path: Option<&Path>) -> Result<PathBuf, String> {
         .unwrap_or_else(default_config_path);
     if !cfg_path.exists() {
         if let Some(parent) = cfg_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create config dir {}: {}", parent.display(), e))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
+            }
+            #[cfg(not(unix))]
+            {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create config dir {}: {}", parent.display(), e))?;
+            }
         }
         fs::write(&cfg_path, DEFAULT_TOML_CONTENT)
             .map_err(|e| format!("Failed to write default config {}: {}", cfg_path.display(), e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&cfg_path, fs::Permissions::from_mode(0o600));
+        }
     }
     Ok(cfg_path)
 }
@@ -859,6 +876,10 @@ pub fn load_config_from_str(raw_text: &str) -> Result<AppConfig, String> {
         .and_then(|g| g.get("capture_factory_keys"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let emit_osd_events = general
+        .and_then(|g| g.get("emit_osd_events"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
     let mut profiles: HashMap<String, ProfileConfig> = HashMap::new();
 
@@ -1082,5 +1103,6 @@ pub fn load_config_from_str(raw_text: &str) -> Result<AppConfig, String> {
         global_combos,
         global_buttons,
         capture_factory_keys,
+        emit_osd_events,
     })
 }
