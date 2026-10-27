@@ -730,6 +730,18 @@ buttons.A = "SPACE"
         let cfg = load_config_from_str(toml_str).unwrap();
         let mut d = FocusSwitchDaemon::new(cfg, None, None, None);
         d.keypress_event_path = Some(event_file.clone());
+
+        // Simulate a pre-upgrade world-readable (0644) event file that another local user
+        // already opened a read descriptor to before the daemon upgraded/started.
+        fs::create_dir_all(event_file.parent().unwrap()).unwrap();
+        fs::write(&event_file, "{\"seq\": 0, \"legacy\": true}\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&event_file, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let mut pre_upgrade_reader = fs::File::open(&event_file).unwrap();
+
         d.ensure_keypress_event_file();
 
         struct MockUi;
@@ -750,10 +762,29 @@ buttons.A = "SPACE"
         assert_eq!(parsed["key"], "SPACE");
         assert!(parsed.get("timestamp").is_none(), "timestamp must be omitted for privacy");
 
+        // Verify the pre-upgrade open file descriptor was severed from the new inode
+        // and cannot read any new mapped key/profile events.
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
+            use std::io::{Read, Seek, SeekFrom};
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+            pre_upgrade_reader.seek(SeekFrom::Start(0)).unwrap();
+            let mut old_fd_contents = String::new();
+            pre_upgrade_reader.read_to_string(&mut old_fd_contents).unwrap();
+            assert!(
+                !old_fd_contents.contains("SPACE"),
+                "Pre-upgrade open file descriptor must not receive new keypress events"
+            );
+
+            let old_ino = pre_upgrade_reader.metadata().unwrap().ino();
             let file_meta = fs::metadata(&event_file).unwrap();
+            assert_ne!(
+                old_ino,
+                file_meta.ino(),
+                "Event file must use a newly created inode rather than reusing the old inode"
+            );
+
             let file_mode = file_meta.permissions().mode() & 0o777;
             assert_eq!(file_mode, 0o600, "Event file must have mode 0600");
 

@@ -308,7 +308,7 @@ pub struct FocusSwitchDaemon {
     pub capture_factory_keys: bool,
 }
 
-pub fn resolve_cache_keypress_event_path() -> PathBuf {
+pub fn legacy_cache_keypress_event_path() -> PathBuf {
     get_home_dir()
         .join(".cache")
         .join("8bitdo-micro")
@@ -324,7 +324,23 @@ pub fn resolve_keypress_event_path() -> PathBuf {
                 .join("last_keypress.json");
         }
     }
-    resolve_cache_keypress_event_path()
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::geteuid() };
+        let run_user = PathBuf::from(format!("/run/user/{}", uid));
+        if run_user.is_dir() {
+            return run_user.join("8bitdo-micro").join("last_keypress.json");
+        }
+        return std::env::temp_dir()
+            .join(format!("8bitdo-micro-{}", uid))
+            .join("last_keypress.json");
+    }
+    #[cfg(not(unix))]
+    {
+        std::env::temp_dir()
+            .join("8bitdo-micro")
+            .join("last_keypress.json")
+    }
 }
 
 impl FocusSwitchDaemon {
@@ -386,59 +402,25 @@ impl FocusSwitchDaemon {
     }
 
     pub fn ensure_keypress_event_file(&self) {
+        // Unconditionally unlink the legacy ~/.cache/8bitdo-micro/last_keypress.json inode
+        // so any pre-upgrade open file descriptor held by another local account is severed.
+        let legacy_cache = legacy_cache_keypress_event_path();
+        let _ = fs::remove_file(&legacy_cache);
+        let _ = fs::remove_file(legacy_cache.with_extension("json.tmp"));
+
         let Some(ref p) = self.keypress_event_path else {
             return;
         };
-        let cache_p = resolve_cache_keypress_event_path();
-        let mut paths = vec![p.clone()];
-        if &cache_p != p {
-            paths.push(cache_p);
+        if !self.config.emit_osd_events {
+            let _ = fs::remove_file(p);
+            return;
         }
-        for target in paths {
-            if let Some(parent) = target.parent() {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::DirBuilderExt;
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
-                    let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
-                }
-                #[cfg(not(unix))]
-                {
-                    let _ = fs::create_dir_all(parent);
-                }
-            }
-            if !target.exists() {
-                #[cfg(unix)]
-                {
-                    use std::io::Write;
-                    use std::os::unix::fs::OpenOptionsExt;
-                    use std::os::unix::fs::PermissionsExt;
-                    if let Ok(mut f) = fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .mode(0o600)
-                        .open(&target)
-                    {
-                        let _ = f.write_all(b"{\"seq\": 0}\n");
-                        let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o600));
-                    }
-                }
-                #[cfg(not(unix))]
-                {
-                    let _ = fs::write(&target, "{\"seq\": 0}\n");
-                }
-            } else {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o600));
-                }
-            }
-        }
+        // Unlink any pre-existing target file first and replace it with a brand-new 0600 inode.
+        let _ = fs::remove_file(p);
+        self.write_event_file_atomic(p, b"{\"seq\": 0}\n");
     }
 
-    fn write_event_file_in_place(&self, target_path: &Path, content: &[u8]) {
+    fn write_event_file_atomic(&self, target_path: &Path, content: &[u8]) {
         let parent = match target_path.parent() {
             Some(p) => p,
             None => return,
@@ -453,18 +435,27 @@ impl FocusSwitchDaemon {
             let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
             let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
 
-            // Write in-place (preserving the inode so Quickshell FileView / inotify watches stay attached)
-            // while enforcing O_NOFOLLOW and 0600 permissions.
+            let tmp_path = parent.join(format!(
+                ".last_keypress.json.tmp.{}.{}",
+                std::process::id(),
+                self.event_seq
+            ));
+            let _ = fs::remove_file(&tmp_path);
+
+            // Create a brand-new 0600 inode with O_CREAT | O_EXCL | O_NOFOLLOW and atomically rename
+            // over target_path so a pre-existing inode is never reused.
             let mut opts = fs::OpenOptions::new();
             opts.write(true)
-                .create(true)
-                .truncate(true)
+                .create_new(true)
                 .mode(0o600)
                 .custom_flags(libc::O_NOFOLLOW);
-            if let Ok(mut file) = opts.open(target_path) {
-                let _ = fs::set_permissions(target_path, fs::Permissions::from_mode(0o600));
-                let _ = file.write_all(content);
-                let _ = file.flush();
+            if let Ok(mut file) = opts.open(&tmp_path) {
+                let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600));
+                if file.write_all(content).is_ok() && file.flush().is_ok() {
+                    let _ = fs::rename(&tmp_path, target_path);
+                } else {
+                    let _ = fs::remove_file(&tmp_path);
+                }
             }
         }
         #[cfg(not(unix))]
@@ -537,11 +528,7 @@ impl FocusSwitchDaemon {
         });
         if let Ok(mut s) = serde_json::to_string(&payload) {
             s.push('\n');
-            self.write_event_file_in_place(path, s.as_bytes());
-            let cache_p = resolve_cache_keypress_event_path();
-            if &cache_p != path {
-                self.write_event_file_in_place(&cache_p, s.as_bytes());
-            }
+            self.write_event_file_atomic(path, s.as_bytes());
         }
     }
 
@@ -552,6 +539,7 @@ impl FocusSwitchDaemon {
         if let Ok(new_cfg) = load_config(Some(path)) {
             self.capture_factory_keys = new_cfg.capture_factory_keys;
             self.config = new_cfg;
+            self.ensure_keypress_event_file();
             let new_prof = self.config.resolve_profile_for_window(
                 &self.active_window.window_class,
                 &self.active_window.window_title,
