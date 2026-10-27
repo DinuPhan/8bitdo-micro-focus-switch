@@ -427,7 +427,7 @@ impl FocusSwitchDaemon {
         }
     }
 
-    fn write_event_file_atomic(&self, target_path: &Path, content: &[u8]) {
+    fn write_event_file_in_place(&self, target_path: &Path, content: &[u8]) {
         let parent = match target_path.parent() {
             Some(p) => p,
             None => return,
@@ -442,28 +442,24 @@ impl FocusSwitchDaemon {
             let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
             let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
 
-            let pid = std::process::id();
-            let tmp_path = parent.join(format!(".last_keypress.json.tmp.{}", pid));
+            // Write in-place (preserving the inode so Quickshell FileView / inotify watches stay attached)
+            // while enforcing O_NOFOLLOW and 0600 permissions.
             let mut opts = fs::OpenOptions::new();
-            opts.write(true).create(true).truncate(true).mode(0o600);
-            if let Ok(mut file) = opts.open(&tmp_path) {
-                let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600));
-                if file.write_all(content).is_ok() && file.flush().is_ok() {
-                    drop(file);
-                    let _ = fs::rename(&tmp_path, target_path);
-                    return;
-                }
+            opts.write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW);
+            if let Ok(mut file) = opts.open(target_path) {
+                let _ = fs::set_permissions(target_path, fs::Permissions::from_mode(0o600));
+                let _ = file.write_all(content);
+                let _ = file.flush();
             }
-            let _ = fs::remove_file(&tmp_path);
         }
         #[cfg(not(unix))]
         {
             let _ = fs::create_dir_all(parent);
-            let pid = std::process::id();
-            let tmp_path = parent.join(format!(".last_keypress.json.tmp.{}", pid));
-            if fs::write(&tmp_path, content).is_ok() {
-                let _ = fs::rename(&tmp_path, target_path);
-            }
+            let _ = fs::write(target_path, content);
         }
     }
 
@@ -530,7 +526,7 @@ impl FocusSwitchDaemon {
         });
         if let Ok(mut s) = serde_json::to_string(&payload) {
             s.push('\n');
-            self.write_event_file_atomic(path, s.as_bytes());
+            self.write_event_file_in_place(path, s.as_bytes());
         }
     }
 
