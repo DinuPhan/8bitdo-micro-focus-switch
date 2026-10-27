@@ -71,7 +71,7 @@ pub async fn scan_for_micro_ble_devices(
     for p in peripherals {
         if let Ok(Some(props)) = p.properties().await {
             let name = props.local_name.unwrap_or_default();
-            if name.to_lowercase().contains(&BLE_DEVICE_NAME.to_lowercase()) {
+            if name.trim().eq_ignore_ascii_case(BLE_DEVICE_NAME) {
                 found.push(DiscoveredMicroBle {
                     name,
                     address: p.address().to_string(),
@@ -124,7 +124,7 @@ pub async fn find_micro_ble_device(
                             peripheral: p,
                         });
                     }
-                } else if name.to_lowercase().contains(&BLE_DEVICE_NAME.to_lowercase()) {
+                } else if name.trim().eq_ignore_ascii_case(BLE_DEVICE_NAME) {
                     let _ = adapter.stop_scan().await;
                     return Ok(DiscoveredMicroBle {
                         name,

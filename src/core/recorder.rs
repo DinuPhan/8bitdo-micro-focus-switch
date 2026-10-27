@@ -201,9 +201,8 @@ pub async fn capture_keyboard_chord(timeout: Option<Duration>) -> Result<ChordRe
     #[cfg(target_os = "linux")]
     {
         let mut streams = Vec::new();
-        for (_path, dev) in evdev::enumerate() {
-            let name = dev.name().unwrap_or("");
-            if name.contains("Virtual Keyboard") {
+        for (path, dev) in evdev::enumerate() {
+            if !crate::daemon::is_physical_evdev_device(&path, &dev) {
                 continue;
             }
             if let Some(keys) = dev.supported_keys() {
@@ -400,6 +399,15 @@ pub fn format_keys_catalog(query: Option<&str>) -> String {
     lines.join("\n").trim_end().to_string()
 }
 
+pub fn sanitize_toml_inline_comment(s: &str) -> String {
+    s.chars()
+        .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+        .filter(|c| !c.is_control())
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 pub fn update_toml_binding(
     content: &str,
     profile: &str,
@@ -407,6 +415,22 @@ pub fn update_toml_binding(
     chord_keys: &[String],
     description: Option<&str>,
 ) -> Result<String, String> {
+    let profile = profile.trim();
+    if profile.is_empty()
+        || !profile
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "Invalid profile name {:?}: must contain only ASCII letters, digits, '_', or '-'",
+            profile
+        ));
+    }
+
+    let clean_description = description
+        .map(sanitize_toml_inline_comment)
+        .filter(|s| !s.is_empty());
+
     let is_combo = button_or_combo.contains('+');
     let (key_name, section_sub) = if is_combo {
         let parsed = parse_combo_buttons(button_or_combo)?;
@@ -497,11 +521,8 @@ pub fn update_toml_binding(
         let new_sub_text = if let Some(m_key) = key_re.find(sub_text) {
             let existing_line = m_key.as_str();
             let mut existing_comment = String::new();
-            if let Some(desc) = description {
-                let clean = desc.trim();
-                if !clean.is_empty() {
-                    existing_comment = format!("# {}", clean);
-                }
+            if let Some(ref clean) = clean_description {
+                existing_comment = format!("# {}", clean);
             } else if existing_line.contains('#') {
                 let mut in_s = false;
                 let mut in_d = false;
@@ -526,10 +547,8 @@ pub fn update_toml_binding(
                 &sub_text[m_key.end()..]
             )
         } else {
-            if let Some(desc) = description {
-                if !desc.trim().is_empty() {
-                    line_to_put = format!("{}  # {}", line_to_put, desc.trim());
-                }
+            if let Some(ref clean) = clean_description {
+                line_to_put = format!("{}  # {}", line_to_put, clean);
             }
             format!("\n{}{}", line_to_put, sub_text)
         };
@@ -540,10 +559,8 @@ pub fn update_toml_binding(
             &prof_block[sub_end..]
         )
     } else {
-        if let Some(desc) = description {
-            if !desc.trim().is_empty() {
-                line_to_put = format!("{}  # {}", line_to_put, desc.trim());
-            }
+        if let Some(ref clean) = clean_description {
+            line_to_put = format!("{}  # {}", line_to_put, clean);
         }
         format!(
             "{}\n[profiles.{}.{}]\n{}\n\n",
@@ -580,7 +597,5 @@ pub fn set_profile_binding(
     )?;
     load_config_from_str(&new_content)
         .map_err(|e| format!("Failed to apply binding (syntax error): {}", e))?;
-    fs::write(config_path, new_content)
-        .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
-    Ok(())
+    crate::config::write_private_atomic(config_path, new_content.as_bytes())
 }

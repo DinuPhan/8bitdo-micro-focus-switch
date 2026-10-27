@@ -29,11 +29,28 @@ pub struct OpenWindowInfo {
 pub fn find_hyprland_socket2() -> Option<PathBuf> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::FileTypeExt;
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
 
-        let sig = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok();
+        let my_uid = unsafe { libc::getuid() };
+        let sig = std::env::var("HYPRLAND_INSTANCE_SIGNATURE")
+            .ok()
+            .filter(|s| !s.is_empty() && !s.contains('/') && !s.contains('\\') && !s.contains(".."));
         let xdg_runtime = std::env::var("XDG_RUNTIME_DIR")
-            .unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
+            .unwrap_or_else(|_| format!("/run/user/{}", my_uid));
+
+        let is_valid_owned_socket = |p: &std::path::Path| -> Option<std::time::SystemTime> {
+            let meta = std::fs::symlink_metadata(p).ok()?;
+            if !meta.file_type().is_socket() || meta.uid() != my_uid {
+                return None;
+            }
+            if let Some(parent) = p.parent() {
+                let p_meta = std::fs::symlink_metadata(parent).ok()?;
+                if !p_meta.is_dir() || p_meta.uid() != my_uid {
+                    return None;
+                }
+            }
+            Some(meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH))
+        };
 
         let mut candidates = Vec::new();
         if let Some(ref s) = sig {
@@ -46,14 +63,7 @@ pub fn find_hyprland_socket2() -> Option<PathBuf> {
                 let mut sock_files: Vec<(std::time::SystemTime, PathBuf)> = entries
                     .flatten()
                     .map(|e| e.path().join(".socket2.sock"))
-                    .filter_map(|p| {
-                        let meta = std::fs::metadata(&p).ok()?;
-                        if meta.file_type().is_socket() {
-                            Some((meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH), p))
-                        } else {
-                            None
-                        }
-                    })
+                    .filter_map(|p| is_valid_owned_socket(&p).map(|mtime| (mtime, p)))
                     .collect();
                 sock_files.sort_by(|a, b| b.0.cmp(&a.0));
                 for (_, p) in sock_files {
@@ -63,10 +73,8 @@ pub fn find_hyprland_socket2() -> Option<PathBuf> {
         }
 
         for cand in candidates {
-            if let Ok(meta) = std::fs::metadata(&cand) {
-                if meta.file_type().is_socket() {
-                    return Some(cand);
-                }
+            if is_valid_owned_socket(&cand).is_some() {
+                return Some(cand);
             }
         }
     }

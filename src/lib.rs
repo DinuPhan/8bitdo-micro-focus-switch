@@ -292,7 +292,7 @@ mod tests {
         assert!(html.contains("selectProfile"));
         assert!(html.contains("class=\"tab-btn active\""));
         for name in &cfg.profile_order {
-            assert!(html.contains(&format!("selectProfile('{}')", name)));
+            assert!(html.contains(&format!("data-profile=\"{}\"", name)));
             assert!(html.contains(&format!("id=\"profile-{}\"", name)));
         }
     }
@@ -767,6 +767,73 @@ buttons.A = "SPACE"
         let _ = fs::remove_file(&event_file);
         d.handle_key_event(&mut ui, 34, 1);
         assert!(!event_file.exists(), "Event file must not be written when emit_osd_events is false");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_udev_rule_seat_scoped_uaccess_and_no_world_writable_mode() {
+        assert!(!cli::UDEV_RULE_CONTENT.contains("0666"));
+        assert!(!cli::UDEV_RULE_CONTENT.contains("8BitDo*"));
+        assert!(cli::UDEV_RULE_CONTENT.contains("MODE=\"0660\""));
+        assert!(cli::UDEV_RULE_CONTENT.contains("TAG+=\"uaccess\""));
+        assert!(cli::UDEV_RULE_CONTENT.contains("ATTRS{id/vendor}==\"2dc8\""));
+        assert!(cli::is_udev_rule_secure_and_current(cli::UDEV_RULE_CONTENT));
+
+        let legacy_rule = "KERNEL==\"uinput\", MODE=\"0666\", GROUP=\"input\", OPTIONS+=\"static_node=uinput\"\n";
+        assert!(!cli::is_udev_rule_secure_and_current(legacy_rule));
+
+        let wildcard_name_rule = "KERNEL==\"uinput\", MODE=\"0660\", TAG+=\"uaccess\"\nATTRS{name}==\"8BitDo*\", MODE=\"0660\", TAG+=\"uaccess\"\n";
+        assert!(!cli::is_udev_rule_secure_and_current(wildcard_name_rule));
+    }
+
+    #[test]
+    fn test_toml_binding_sanitizes_newlines_and_blocks_line_injection() {
+        let injected_desc = " innocent comment\nB = \"exec: TouchPwned\"\n# trailing";
+        let updated = recorder::update_toml_binding(
+            DEFAULT_TOML_CONTENT,
+            "agy",
+            "A",
+            &["Space".to_string()],
+            Some(injected_desc),
+        )
+        .unwrap();
+
+        let cfg = load_config_from_str(&updated).unwrap();
+        let b_act = cfg.profiles["agy"].buttons.get("B").unwrap();
+        assert!(
+            b_act.exec_cmd.is_none(),
+            "Newline in description must not inject a new TOML key/exec binding"
+        );
+        assert!(
+            recorder::update_toml_binding(
+                DEFAULT_TOML_CONTENT,
+                "agy]\n[profiles.evil",
+                "A",
+                &["Space".to_string()],
+                None,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_write_private_atomic_enforces_0600_and_0700() {
+        let temp_dir = std::env::temp_dir().join(format!("8bitdo-atomic-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        let cfg_path = temp_dir.join("8bitdo-micro").join("profiles.toml");
+
+        crate::core::config::write_private_atomic(&cfg_path, DEFAULT_TOML_CONTENT.as_bytes()).unwrap();
+        assert!(cfg_path.exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let file_mode = fs::metadata(&cfg_path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(file_mode, 0o600);
+            let dir_mode = fs::metadata(cfg_path.parent().unwrap()).unwrap().permissions().mode() & 0o777;
+            assert_eq!(dir_mode, 0o700);
+        }
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

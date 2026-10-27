@@ -158,14 +158,16 @@ export function serializeProfilesToml(config: AppConfigData): string {
     "# Managed by 8BitDo Micro Focus Switch GUI & Daemon",
     "",
     "[general]",
-    `fallback_profile = "${config.general.fallbackProfile}"`,
-    `backend = "${config.general.backend}"`,
-    `combo_timeout_ms = ${config.general.comboTimeoutMs}`,
+    `fallback_profile = "${escapeTomlString(config.general.fallbackProfile)}"`,
+    `backend = "${escapeTomlString(config.general.backend)}"`,
+    `combo_timeout_ms = ${Number(config.general.comboTimeoutMs) || 50}`,
     `emit_osd_events = ${config.general.emitOsdEvents !== false}`,
     "",
   ];
 
-  for (const [profName, prof] of Object.entries(config.profiles)) {
+  for (const [rawProfName, prof] of Object.entries(config.profiles)) {
+    const profName = sanitizeTomlIdentifier(rawProfName);
+    if (!profName) continue;
     lines.push(`[profiles.${profName}]`);
     if (prof.description) {
       lines.push(`description = "${escapeTomlString(prof.description)}"`);
@@ -177,7 +179,7 @@ export function serializeProfilesToml(config: AppConfigData): string {
       lines.push(`match_title = "${escapeTomlString(prof.matchTitle)}"`);
     }
     if (prof.turn !== undefined && prof.turn !== 0) {
-      lines.push(`turn = ${prof.turn}`);
+      lines.push(`turn = ${Number(prof.turn) || 0}`);
     }
     lines.push("");
 
@@ -204,7 +206,8 @@ export function serializeProfilesToml(config: AppConfigData): string {
 }
 
 function formatActionEntry(key: string, act: ActionData, quoteKey: boolean): string {
-  const kStr = quoteKey || key.includes("+") ? `"${key}"` : key;
+  const cleanKey = key.replace(/[\r\n\0-\x1f\x7f]/g, "");
+  const kStr = quoteKey || cleanKey.includes("+") ? `"${escapeTomlString(cleanKey)}"` : sanitizeTomlIdentifier(cleanKey);
   let valStr = "";
 
   if (act.execCmd) {
@@ -217,10 +220,23 @@ function formatActionEntry(key: string, act: ActionData, quoteKey: boolean): str
     valStr = `"NONE"`;
   }
 
-  const commentStr = act.description ? `  # ${act.description}` : "";
+  const cleanComment = act.description
+    ? act.description.replace(/[\r\n]+/g, " ").replace(/[\0-\x1f\x7f]/g, "").trim()
+    : "";
+  const commentStr = cleanComment ? `  # ${cleanComment}` : "";
   return `${kStr} = ${valStr}${commentStr}`;
 }
 
+function sanitizeTomlIdentifier(s: string): string {
+  return s.replace(/[^A-Za-z0-9_-]/g, "");
+}
+
 function escapeTomlString(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t")
+    .replace(/[\0-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
 }

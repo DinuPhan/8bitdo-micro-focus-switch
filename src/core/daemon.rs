@@ -47,15 +47,42 @@ pub fn identify_controller_name_and_ids(vendor: u16, product: u16, name: &str) -
     None
 }
 
+#[cfg(target_os = "linux")]
+pub fn is_physical_evdev_device(path: &Path, dev: &evdev::Device) -> bool {
+    let dev_name = dev.name().unwrap_or("");
+    if dev_name == VIRTUAL_DEVICE_NAME || dev_name.contains("Virtual Keyboard") {
+        return false;
+    }
+    let has_phys = dev
+        .physical_path()
+        .map(|p| !p.trim().is_empty())
+        .unwrap_or(false);
+    if !has_phys {
+        return false;
+    }
+    if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
+        let sysfs_device_link = PathBuf::from(format!("/sys/class/input/{}/device", fname));
+        match fs::canonicalize(&sysfs_device_link) {
+            Ok(canon) => {
+                if canon.to_string_lossy().starts_with("/sys/devices/virtual/input/") {
+                    return false;
+                }
+            }
+            Err(_) => return false,
+        }
+    }
+    true
+}
+
 pub fn find_micro_input_devices_info() -> Vec<ControllerDeviceInfo> {
     #[cfg(target_os = "linux")]
     {
         let mut matched = Vec::new();
         for (path, dev) in evdev::enumerate() {
-            let dev_name = dev.name().unwrap_or("");
-            if dev_name == VIRTUAL_DEVICE_NAME {
+            if !is_physical_evdev_device(&path, &dev) {
                 continue;
             }
+            let dev_name = dev.name().unwrap_or("");
             let id = dev.input_id();
             if let Some(model) = identify_controller_name_and_ids(id.vendor(), id.product(), dev_name)
             {
@@ -953,10 +980,10 @@ impl FocusSwitchDaemon {
                     }
                     let mut target_dev: Option<(PathBuf, evdev::Device)> = None;
                     for (path, dev) in evdev::enumerate() {
-                        let name = dev.name().unwrap_or("");
-                        if name == VIRTUAL_DEVICE_NAME {
+                        if !is_physical_evdev_device(&path, &dev) {
                             continue;
                         }
+                        let name = dev.name().unwrap_or("");
                         let id = dev.input_id();
                         if identify_controller_name_and_ids(id.vendor(), id.product(), name)
                             .is_some()

@@ -183,6 +183,7 @@ pub fn get_config_path() -> Result<String, String> {
 pub fn read_config() -> Result<String, String> {
     let path = resolve_config_path();
     if path.exists() {
+        config::harden_private_file_permissions(&path);
         fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))
     } else {
         Ok(config::DEFAULT_TOML_CONTENT.to_string())
@@ -194,11 +195,7 @@ pub fn write_config(content: String, state: tauri::State<'_, DaemonState>) -> Re
     config::load_config_from_str(&content).map_err(|e| format!("Invalid configuration: {}", e))?;
 
     let path = resolve_config_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
-    }
-    fs::write(&path, content).map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    config::write_private_atomic(&path, content.as_bytes())?;
 
     let _ = reload_all(&state);
     Ok(())

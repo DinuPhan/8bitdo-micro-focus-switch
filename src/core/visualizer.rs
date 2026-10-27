@@ -319,17 +319,19 @@ pub fn generate_html_viewer(
         };
         let is_active = name == active_profile_name;
         let active_class = if is_active { "active" } else { "" };
+        let safe_name = escape_html(name);
+        let safe_upper = escape_html(&name.to_uppercase());
         tabs_html.push(format!(
-            r##"<button class="tab-btn {}" onclick="selectProfile('{}')">{}</button>"##,
+            r##"<button class="tab-btn {}" data-profile="{}">{}</button>"##,
             active_class,
-            name,
-            name.to_uppercase()
+            safe_name,
+            safe_upper
         ));
         let svg_content = generate_svg_diagram(prof);
         let display_style = if is_active { "block" } else { "none" };
         svgs_html.push(format!(
             r##"<div id="profile-{}" class="profile-view" style="display:{};">{}</div>"##,
-            name, display_style, svg_content
+            safe_name, display_style, svg_content
         ));
     }
 
@@ -387,13 +389,19 @@ pub fn generate_html_viewer(
   <div class="viewer-container">{}</div>
   <script>
     function selectProfile(name) {{
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => {{
+        b.classList.toggle('active', b.getAttribute('data-profile') === name);
+      }});
       document.querySelectorAll('.profile-view').forEach(v => v.style.display = 'none');
-      const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.toLowerCase() === name.toLowerCase());
-      if (btn) btn.classList.add('active');
       const target = document.getElementById('profile-' + name);
       if (target) target.style.display = 'block';
     }}
+    document.querySelectorAll('.tab-btn').forEach(btn => {{
+      btn.addEventListener('click', () => {{
+        const prof = btn.getAttribute('data-profile');
+        if (prof) selectProfile(prof);
+      }});
+    }});
   </script>
 </body>
 </html>"##,

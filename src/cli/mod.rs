@@ -11,7 +11,10 @@ use crate::ble::{
     format_snapshot_report, read_hardware_snapshot, scan_for_micro_ble_devices,
     write_hardware_profile,
 };
-use crate::config::{default_config_path, ensure_default_config, load_config};
+use crate::config::{
+    default_config_path, ensure_default_config, load_config, resolve_private_runtime_dir,
+    write_private_atomic,
+};
 use crate::daemon::{find_micro_input_devices_info as find_micro_input_devices, FocusSwitchDaemon};
 use crate::input_backend::check_uinput_access;
 use std::time::Duration;
@@ -24,11 +27,19 @@ use crate::window_watcher::{find_hyprland_socket2, query_active_window};
 
 pub const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/99-8bitdo-micro-uinput.rules";
 pub const UDEV_RULE_CONTENT: &str = concat!(
-    "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", MODE=\"0666\", OPTIONS+=\"static_node=uinput\"\n",
-    "KERNEL==\"event*\", SUBSYSTEM==\"input\", ATTRS{name}==\"8BitDo*\", MODE=\"0666\", TAG+=\"uaccess\"\n",
-    "KERNEL==\"event*\", SUBSYSTEM==\"input\", ATTRS{id/vendor}==\"2dc8\", MODE=\"0666\", TAG+=\"uaccess\"\n"
+    "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", MODE=\"0660\", TAG+=\"uaccess\", OPTIONS+=\"static_node=uinput\"\n",
+    "KERNEL==\"event*\", SUBSYSTEM==\"input\", ATTRS{id/vendor}==\"2dc8\", MODE=\"0660\", TAG+=\"uaccess\"\n"
 );
 pub const MODULES_LOAD_PATH: &str = "/etc/modules-load.d/99-8bitdo-micro-uinput.conf";
+
+pub fn is_udev_rule_secure_and_current(content: &str) -> bool {
+    !content.contains("0666")
+        && !content.contains("ATTRS{name}==\"8BitDo*\"")
+        && content.contains("KERNEL==\"uinput\"")
+        && content.contains("ATTRS{id/vendor}==\"2dc8\"")
+        && content.contains("MODE=\"0660\"")
+        && content.contains("TAG+=\"uaccess\"")
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -291,7 +302,9 @@ pub fn find_daemon_pids() -> Vec<u32> {
     let mut pids = Vec::new();
     #[cfg(target_os = "linux")]
     {
+        use std::os::unix::fs::MetadataExt;
         let my_pid = std::process::id();
+        let my_uid = unsafe { libc::getuid() };
         if let Ok(entries) = fs::read_dir("/proc") {
             for entry in entries.flatten() {
                 let fname = entry.file_name();
@@ -300,17 +313,28 @@ pub fn find_daemon_pids() -> Vec<u32> {
                     if pid == my_pid {
                         continue;
                     }
-                    let cmdline_path = entry.path().join("cmdline");
+                    let proc_path = entry.path();
+                    if let Ok(meta) = fs::metadata(&proc_path) {
+                        if meta.uid() != my_uid {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                    let cmdline_path = proc_path.join("cmdline");
                     if let Ok(raw) = fs::read(&cmdline_path) {
                         let args: Vec<String> = raw
                             .split(|&b| b == 0)
                             .filter(|s| !s.is_empty())
                             .map(|s| String::from_utf8_lossy(s).to_string())
                             .collect();
-                        let full = args.join(" ");
-                        if full.contains("8bitdo-micro-focus-switch")
-                            && args.iter().any(|a| a == "daemon")
-                        {
+                        let is_our_bin = args
+                            .first()
+                            .and_then(|arg0| Path::new(arg0).file_name())
+                            .and_then(|n| n.to_str())
+                            .map(|n| n == "8bitdo-micro-focus-switch")
+                            .unwrap_or(false);
+                        if is_our_bin && args.iter().skip(1).any(|a| a == "daemon") {
                             pids.push(pid);
                         }
                     }
@@ -577,8 +601,7 @@ WantedBy=default.target\n",
         cfg_path.display(),
         backend_arg
     );
-    fs::write(&service_path, unit_text)
-        .map_err(|e| format!("Failed to write {}: {}", service_path.display(), e))?;
+    write_private_atomic(&service_path, unit_text.as_bytes())?;
     Ok(service_path)
 }
 
@@ -909,12 +932,7 @@ async fn cmd_ble_read(
     let snapshot = read_hardware_snapshot(address, secs(timeout)).await?;
     println!("{}", format_snapshot_report(&snapshot));
     if let Some(out_path) = save_bin {
-        if let Some(parent) = out_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create dir {}: {}", parent.display(), e))?;
-        }
-        fs::write(out_path, &snapshot.raw_record)
-            .map_err(|e| format!("Failed to write {}: {}", out_path.display(), e))?;
+        write_private_atomic(out_path, &snapshot.raw_record)?;
         println!(
             "\nSaved raw 180-byte record_micro to {}",
             out_path.display()
@@ -979,10 +997,7 @@ async fn cmd_ble_reset(address: Option<&str>, timeout: f64) -> Result<i32, Strin
         .join("hardware-backup.bin");
     println!("Reading current hardware profile before reset ...");
     let before = read_hardware_snapshot(address, secs(timeout)).await?;
-    if let Some(parent) = backup_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let _ = fs::write(&backup_path, &before.raw_record);
+    let _ = write_private_atomic(&backup_path, &before.raw_record);
     println!(
         "Backed up previous 180-byte hardware config to {}",
         backup_path.display()
@@ -1012,7 +1027,7 @@ async fn cmd_daemon(
                     .parent()
                     .unwrap_or_else(|| Path::new("."))
                     .join("hardware-backup.bin");
-                let _ = fs::write(&backup_path, &snap.raw_record);
+                let _ = write_private_atomic(&backup_path, &snap.raw_record);
                 eprintln!(
                     "[8bitdo-micro] Backed up custom hardware profile to {} and resetting controller to factory keys...",
                     backup_path.display()
@@ -1188,8 +1203,7 @@ fn cmd_config(
                     existing_text.push('\n');
                 }
                 existing_text.push_str(template.trim_start());
-                fs::write(&cfg_path, existing_text)
-                    .map_err(|e| format!("Failed to write {}: {}", cfg_path.display(), e))?;
+                write_private_atomic(&cfg_path, existing_text.as_bytes())?;
                 println!(
                     "Created new profile [{}] in {}.",
                     norm_name,
@@ -1421,42 +1435,43 @@ fn cmd_reload(config: Option<&Path>) -> Result<i32, String> {
 
 fn cmd_install_udev() -> Result<i32, String> {
     let (uinput_ok, _msg) = check_uinput_access();
-    let rule_has_8bitdo = std::fs::read_to_string(UDEV_RULE_PATH)
-        .map(|s| s.contains("2dc8") && s.contains("8BitDo"))
-        .unwrap_or(false);
-    if uinput_ok && Path::new(MODULES_LOAD_PATH).exists() && rule_has_8bitdo {
-        println!("✓ /dev/uinput and controller evdev rules are already configured!");
+    let existing_rule = std::fs::read_to_string(UDEV_RULE_PATH).unwrap_or_default();
+    let rule_secure = is_udev_rule_secure_and_current(&existing_rule);
+    if uinput_ok && Path::new(MODULES_LOAD_PATH).exists() && rule_secure {
+        println!("✓ /dev/uinput and controller evdev seat-scoped uaccess rules are already configured!");
         return Ok(0);
     }
 
     println!(
-        "Configuring /dev/uinput and /dev/input/event* udev rules ({}) and boot module ({}) ...",
+        "Configuring seat-scoped uaccess udev rules ({}) and boot module ({}) ...",
         UDEV_RULE_PATH, MODULES_LOAD_PATH
     );
+    let backup_path = format!("{}.bak", UDEV_RULE_PATH);
     let cmd = format!(
-        "echo '{}' | sudo tee {} > /dev/null && echo 'uinput' | sudo tee {} > /dev/null && sudo modprobe uinput && sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput && sudo udevadm trigger --subsystem-match=input",
-        UDEV_RULE_CONTENT.trim(),
-        UDEV_RULE_PATH,
-        MODULES_LOAD_PATH
+        "if [ -f {path} ]; then sudo cp -p {path} {bak}; fi && printf '%s\\n' '{rule}' | sudo tee {path} > /dev/null && echo 'uinput' | sudo tee {modpath} > /dev/null && sudo modprobe uinput && if [ -e /dev/uinput ]; then sudo chmod 0660 /dev/uinput; fi && sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput && sudo udevadm trigger --subsystem-match=input",
+        path = UDEV_RULE_PATH,
+        bak = backup_path,
+        rule = UDEV_RULE_CONTENT.trim(),
+        modpath = MODULES_LOAD_PATH
     );
     if let Ok(status) = Command::new("sudo").args(["sh", "-c", &cmd]).status() {
         if status.success() {
-            println!("✓ Granted /dev/uinput permissions and enabled uinput module on boot!");
+            println!("✓ Configured seat-scoped uaccess permissions (MODE=0660, TAG+=uaccess) and enabled uinput module!");
             return Ok(0);
         }
     }
 
     println!("\nPlease run the following command in your terminal with sudo:");
     println!(
-        "  echo '{}' | sudo tee {}",
+        "  printf '%s\\n' '{}' | sudo tee {}",
         UDEV_RULE_CONTENT.trim(),
         UDEV_RULE_PATH
     );
     println!(
-        "  echo 'uinput' | sudo tee {} && sudo modprobe uinput",
+        "  echo 'uinput' | sudo tee {} && sudo modprobe uinput && sudo chmod 0660 /dev/uinput",
         MODULES_LOAD_PATH
     );
-    println!("  sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput");
+    println!("  sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput && sudo udevadm trigger --subsystem-match=input");
     Ok(1)
 }
 
@@ -1502,11 +1517,11 @@ fn cmd_setup(
 
     if !skip_udev {
         let (uinput_ok, _) = check_uinput_access();
-        let rule_has_8bitdo = std::fs::read_to_string(UDEV_RULE_PATH)
-            .map(|s| s.contains("2dc8") && s.contains("8BitDo"))
+        let rule_secure = std::fs::read_to_string(UDEV_RULE_PATH)
+            .map(|s| is_udev_rule_secure_and_current(&s))
             .unwrap_or(false);
-        if uinput_ok && rule_has_8bitdo {
-            println!("✓ /dev/uinput & controller evdev permissions: OK");
+        if uinput_ok && rule_secure {
+            println!("✓ /dev/uinput & controller evdev seat-scoped permissions: OK");
         } else {
             let _ = cmd_install_udev();
         }
@@ -1572,18 +1587,23 @@ async fn cmd_show(
     }
 
     if let Some(out_path) = save {
-        if let Some(parent) = out_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create dir {}: {}", parent.display(), e))?;
-        }
-        fs::write(out_path, &content)
-            .map_err(|e| format!("Failed to write {}: {}", out_path.display(), e))?;
+        write_private_atomic(out_path, content.as_bytes())?;
         println!("Saved diagram to: {}", out_path.display());
         return Ok(0);
     }
 
-    let tmp_path = std::env::temp_dir().join(format!("8bitdo-micro-{}{}", prof.name, ext));
-    fs::write(&tmp_path, &content)
+    let safe_prof_name: String = prof
+        .name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    let preview_name = if safe_prof_name.is_empty() {
+        "profile".to_string()
+    } else {
+        safe_prof_name
+    };
+    let tmp_path = resolve_private_runtime_dir().join(format!("8bitdo-micro-{}{}", preview_name, ext));
+    write_private_atomic(&tmp_path, content.as_bytes())
         .map_err(|e| format!("Failed to write temp diagram: {}", e))?;
 
     let viewer_cmd = match viewer {

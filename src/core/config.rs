@@ -43,6 +43,16 @@ pub fn default_config_path() -> PathBuf {
     preferred
 }
 
+pub fn resolve_private_runtime_dir() -> PathBuf {
+    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        let trimmed = runtime_dir.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed).join("8bitdo-micro");
+        }
+    }
+    get_home_dir().join(".cache").join("8bitdo-micro")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ButtonAction {
     pub keys: Vec<String>,
@@ -807,30 +817,116 @@ fn extract_profile_section_order(text: &str) -> Vec<String> {
     order
 }
 
+pub fn ensure_private_dir(dir: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        use std::os::unix::fs::PermissionsExt;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)
+            .map_err(|e| format!("Failed to create directory {}: {}", dir.display(), e))?;
+        let dir_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if dir_name.contains("8bitdo-micro") {
+            let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(dir)
+            .map_err(|e| format!("Failed to create directory {}: {}", dir.display(), e))
+    }
+}
+
+pub fn harden_private_file_permissions(target_path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if target_path.exists() {
+            let _ = fs::set_permissions(target_path, fs::Permissions::from_mode(0o600));
+        }
+        if let Some(parent) = target_path.parent() {
+            let dir_name = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if dir_name.contains("8bitdo-micro") && parent.exists() {
+                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+                let backup = parent.join("hardware-backup.bin");
+                if backup.exists() {
+                    let _ = fs::set_permissions(&backup, fs::Permissions::from_mode(0o600));
+                }
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = target_path;
+    }
+}
+
+pub fn write_private_atomic(target_path: &Path, content: &[u8]) -> Result<(), String> {
+    if let Some(parent) = target_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            ensure_private_dir(parent)?;
+        }
+    }
+    let parent = target_path.parent().unwrap_or_else(|| Path::new("."));
+    let fname = target_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+    let pid = std::process::id();
+    let tmp_path = parent.join(format!(".{}.tmp.{}", fname, pid));
+
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW);
+        let mut file = opts.open(&tmp_path).map_err(|e| {
+            format!(
+                "Failed to open temporary file {}: {}",
+                tmp_path.display(),
+                e
+            )
+        })?;
+        let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600));
+        if let Err(e) = file.write_all(content).and_then(|_| file.flush()) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("Failed to write {}: {}", target_path.display(), e));
+        }
+        drop(file);
+        if let Err(e) = fs::rename(&tmp_path, target_path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("Failed to rename {}: {}", target_path.display(), e));
+        }
+        harden_private_file_permissions(target_path);
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(&tmp_path, content)
+            .map_err(|e| format!("Failed to write {}: {}", tmp_path.display(), e))?;
+        fs::rename(&tmp_path, target_path)
+            .map_err(|e| format!("Failed to rename {}: {}", target_path.display(), e))
+    }
+}
+
 pub fn ensure_default_config(path: Option<&Path>) -> Result<PathBuf, String> {
     let cfg_path = path
         .map(|p| p.to_path_buf())
         .unwrap_or_else(default_config_path);
     if !cfg_path.exists() {
-        if let Some(parent) = cfg_path.parent() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
-            }
-            #[cfg(not(unix))]
-            {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create config dir {}: {}", parent.display(), e))?;
-            }
-        }
-        fs::write(&cfg_path, DEFAULT_TOML_CONTENT)
-            .map_err(|e| format!("Failed to write default config {}: {}", cfg_path.display(), e))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&cfg_path, fs::Permissions::from_mode(0o600));
-        }
+        write_private_atomic(&cfg_path, DEFAULT_TOML_CONTENT.as_bytes())?;
+    } else {
+        harden_private_file_permissions(&cfg_path);
     }
     Ok(cfg_path)
 }
@@ -841,6 +937,7 @@ pub fn load_config(path: Option<&Path>) -> Result<AppConfig, String> {
             if !p.exists() {
                 return Err(format!("Configuration file not found: {}", p.display()));
             }
+            harden_private_file_permissions(p);
             p.to_path_buf()
         }
         None => ensure_default_config(None)?,

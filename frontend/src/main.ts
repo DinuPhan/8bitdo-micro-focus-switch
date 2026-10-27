@@ -816,7 +816,7 @@ function renderCombosList() {
   if (comboKeys.length === 0) {
     combosContainer.innerHTML = `
       <div style="grid-column: 1 / -1; padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">
-        No simultaneous combos defined for profile '${activeProfileName}'. Click <b>+ Add Combo</b> to create one!
+        No simultaneous combos defined for profile '${escapeHtml(activeProfileName)}'. Click <b>+ Add Combo</b> to create one!
       </div>
     `;
     return;
@@ -835,14 +835,14 @@ function renderCombosList() {
     card.innerHTML = `
       <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span class="combo-trigger-badge">${displayKey}</span>
+          <span class="combo-trigger-badge">${escapeHtml(displayKey)}</span>
           <span style="font-size: 11px; color: var(--text-muted); font-family: monospace;">(Trigger)</span>
         </div>
         <div style="font-size: 13px; color: var(--text-main); font-weight: 600; display: flex; align-items: center; gap: 6px;">
           <span style="color: var(--accent-blue);">➔</span>
-          <span class="combo-action-badge">${formatActionText(act)}</span>
+          <span class="combo-action-badge">${escapeHtml(formatActionText(act))}</span>
         </div>
-        ${act.description ? `<div style="font-size: 11px; color: var(--text-muted);">• ${act.description}</div>` : ""}
+        ${act.description ? `<div style="font-size: 11px; color: var(--text-muted);">• ${escapeHtml(act.description)}</div>` : ""}
       </div>
       <div style="display: flex; gap: 6px; align-items: center;">
         <button class="btn-edit-combo" title="Configure binding & key capture">⌨️ Record / Edit</button>
@@ -1181,7 +1181,7 @@ btnPickWindow.addEventListener("click", async () => {
       renderOpenWindows(filtered);
     };
   } catch (err) {
-    openWindowsList.innerHTML = `<div style="color: var(--accent-red); padding: 10px;">Error: ${err}</div>`;
+    openWindowsList.innerHTML = `<div style="color: var(--accent-red); padding: 10px;">Error: ${escapeHtml(String(err))}</div>`;
   }
 });
 
@@ -1199,8 +1199,8 @@ function renderOpenWindows(
     item.style.cssText =
       "background-color: var(--bg-overlay); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; cursor: pointer; transition: all 0.15s ease;";
     item.innerHTML = `
-      <div style="font-weight: 700; color: var(--accent-blue);">${win.class}</div>
-      <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${win.title || "No Title"}</div>
+      <div style="font-weight: 700; color: var(--accent-blue);">${escapeHtml(win.class)}</div>
+      <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${escapeHtml(win.title || "No Title")}</div>
     `;
 
     item.addEventListener("mouseenter", () => {
@@ -1215,7 +1215,7 @@ function renderOpenWindows(
     item.addEventListener("click", () => {
       const profile = appConfig.profiles[activeProfileName];
       if (profile) {
-        profile.matchClass = `^(${win.class})$`;
+        profile.matchClass = `^(${escapeRegex(win.class)})$`;
         if (win.title) profile.matchTitle = win.title;
         showToast(`Matched '${activeProfileName}' to window class '${win.class}'`);
       }
@@ -1241,6 +1241,10 @@ btnNewProfile.addEventListener("click", () => {
 btnCreateProfileConfirm.addEventListener("click", () => {
   const name = newProfileName.value.trim().toLowerCase();
   if (!name) return;
+  if (!/^[a-z0-9_-]+$/.test(name)) {
+    alert("Profile name may only contain letters, digits, '_', or '-'.");
+    return;
+  }
 
   if (appConfig.profiles[name]) {
     alert(`Profile '${name}' already exists!`);
@@ -1277,7 +1281,7 @@ btnDeleteProfile.addEventListener("click", () => {
   if (!confirm(`Are you sure you want to delete profile '${activeProfileName}'?`)) return;
 
   delete appConfig.profiles[activeProfileName];
-  const opt = profileSelect.querySelector(`option[value="${activeProfileName}"]`);
+  const opt = Array.from(profileSelect.options).find((o) => o.value === activeProfileName);
   if (opt) opt.remove();
 
   activeProfileName = Object.keys(appConfig.profiles)[0] || "default";
@@ -1408,6 +1412,19 @@ function formatActionText(action?: ActionData): string {
 
 function truncate(s: string, maxLen: number): string {
   return s.length > maxLen ? s.substring(0, maxLen - 1) + "…" : s;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function showToast(msg: string) {
