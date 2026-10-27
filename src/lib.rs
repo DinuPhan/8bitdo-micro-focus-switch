@@ -841,4 +841,26 @@ buttons.A = "SPACE"
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_ble_name_matching_excludes_classic_bt_hid_and_baselines_do_not_collide() {
+        assert!(crate::core::ble::is_micro_ble_name("80EL"));
+        assert!(crate::core::ble::is_micro_ble_name("80el"));
+        assert!(!crate::core::ble::is_micro_ble_name("8BitDo Micro gamepad"));
+        assert!(!crate::core::ble::is_micro_ble_name("8BitDo Zero 2 gamepad"));
+
+        // Verify sentinel and factory 16-button baselines have 32 distinct non-overlapping evdev codes
+        let mut seen_codes = std::collections::HashSet::new();
+        for &(btn, key_name) in crate::keycodes::SENTINEL_BUTTON_MAP {
+            let code = crate::core::protocol::key_name_to_evdev(key_name).unwrap();
+            assert!(seen_codes.insert(code), "Duplicate evdev code in sentinel baseline");
+            assert_eq!(crate::core::protocol::evdev_to_button(code), Some(btn));
+        }
+        for &(btn, _) in crate::keycodes::SENTINEL_BUTTON_MAP {
+            let fcode = crate::core::protocol::button_to_factory_evdev(btn).unwrap();
+            assert!(seen_codes.insert(fcode), "Factory code collided with sentinel baseline");
+            assert_eq!(crate::core::protocol::evdev_to_button(fcode), Some(btn));
+        }
+        assert_eq!(seen_codes.len(), 32);
+    }
 }

@@ -52,10 +52,7 @@ async fn get_default_adapter() -> Result<Adapter, String> {
 
 pub fn is_micro_ble_name(name: &str) -> bool {
     let lower = name.trim().to_lowercase();
-    lower == BLE_DEVICE_NAME.to_lowercase()
-        || lower.contains("80el")
-        || lower.contains("8bitdo micro")
-        || lower.contains("8bitdo zero")
+    lower == BLE_DEVICE_NAME.to_lowercase() || lower.contains("80el")
 }
 
 pub async fn scan_for_micro_ble_devices(
@@ -354,6 +351,105 @@ pub async fn write_hardware_profile(
             None
         };
         let payload_bytes = profile.to_bytes(base_bytes.as_deref())?;
+        session.write_config_bytes(&payload_bytes, true).await?;
+        let verified_bytes = session.read_config_bytes().await?;
+        let verified_profile = MicroHardwareProfile::from_bytes(&verified_bytes)?;
+        Ok(MicroBleSnapshot {
+            address: addr_str,
+            name: name_str,
+            platform: Some(platform),
+            firmware_version: Some(ver_str),
+            raw_version: Some(raw_ver),
+            raw_record: verified_bytes,
+            profile: verified_profile,
+        })
+    }
+    .await;
+    session.close().await;
+    res
+}
+
+#[derive(Debug, Clone)]
+pub struct SentinelNormalizationReport {
+    pub address: String,
+    pub previous_profile: &'static str,
+    pub previous_turn_degrees: i32,
+    pub backed_up_to: Option<std::path::PathBuf>,
+    pub flashed_sentinel: bool,
+}
+
+pub async fn ensure_sentinel_baseline(
+    address: Option<&str>,
+    timeout: Duration,
+    backup_dir: Option<&std::path::Path>,
+) -> Result<SentinelNormalizationReport, String> {
+    let dev = find_micro_ble_device(address, timeout).await?;
+    let addr_str = dev.address.clone();
+    let session = MicroBleSession::connect(dev, Duration::from_secs(3)).await?;
+    let res = async {
+        let base_bytes = session.read_config_bytes().await?;
+        let hw = MicroHardwareProfile::from_bytes(&base_bytes)?;
+        let prev_name = crate::protocol::identify_hardware_profile_name(&hw);
+        let prev_turn = hw.turn_degrees();
+
+        if prev_name == "sentinel" && hw.turn == 0 && hw.enabled {
+            return Ok(SentinelNormalizationReport {
+                address: addr_str,
+                previous_profile: prev_name,
+                previous_turn_degrees: prev_turn,
+                backed_up_to: None,
+                flashed_sentinel: false,
+            });
+        }
+
+        let mut backed_up_to = None;
+        if prev_name != "factory" && prev_name != "sentinel" {
+            let dir = backup_dir
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| {
+                    crate::config::default_config_path()
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new("."))
+                        .to_path_buf()
+                });
+            let backup_path = dir.join("hardware-backup.bin");
+            if crate::config::write_private_atomic(&backup_path, &base_bytes).is_ok() {
+                backed_up_to = Some(backup_path);
+            }
+        }
+
+        let sentinel_hw = crate::protocol::get_builtin_hardware_preset("sentinel")?;
+        let payload_bytes = sentinel_hw.to_bytes(Some(&base_bytes))?;
+        session.write_config_bytes(&payload_bytes, true).await?;
+
+        Ok(SentinelNormalizationReport {
+            address: addr_str,
+            previous_profile: prev_name,
+            previous_turn_degrees: prev_turn,
+            backed_up_to,
+            flashed_sentinel: true,
+        })
+    }
+    .await;
+    session.close().await;
+    res
+}
+
+pub async fn write_raw_hardware_record(
+    raw_bytes: &[u8],
+    address: Option<&str>,
+    timeout: Duration,
+) -> Result<MicroBleSnapshot, String> {
+    let profile = MicroHardwareProfile::from_bytes(raw_bytes)?;
+    let dev = find_micro_ble_device(address, timeout).await?;
+    let addr_str = dev.address.clone();
+    let name_str = dev.name.clone();
+    let session = MicroBleSession::connect(dev, Duration::from_secs(3)).await?;
+    let res = async {
+        let platform = session.read_platform().await?;
+        let (raw_ver, ver_str) = session.read_version().await?;
+        let base_bytes = session.read_config_bytes().await?;
+        let payload_bytes = profile.to_bytes(Some(&base_bytes))?;
         session.write_config_bytes(&payload_bytes, true).await?;
         let verified_bytes = session.read_config_bytes().await?;
         let verified_profile = MicroHardwareProfile::from_bytes(&verified_bytes)?;

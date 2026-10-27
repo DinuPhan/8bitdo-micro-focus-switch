@@ -191,30 +191,11 @@ pub fn sentinel_evdev_to_button(code: u16) -> Option<&'static str> {
     }
 }
 
-pub fn agy_evdev_to_button(code: u16) -> Option<&'static str> {
-    match code {
-        14 => Some("A"),      // KEY_BACKSPACE
-        109 => Some("B"),     // KEY_PAGEDOWN
-        104 => Some("X"),     // KEY_PAGEUP
-        15 => Some("L"),      // KEY_TAB
-        42 => Some("L2"),     // KEY_LEFTSHIFT
-        28 => Some("R2"),     // KEY_ENTER
-        1  => Some("SELECT"), // KEY_ESC
-        57 => Some("STAR"),   // KEY_SPACE
-        53 => Some("HOME"),   // KEY_SLASH
-        103 => Some("UP"),    // KEY_UP
-        108 => Some("DOWN"),  // KEY_DOWN
-        105 => Some("LEFT"),  // KEY_LEFT
-        106 => Some("RIGHT"), // KEY_RIGHT
-        _ => None,
-    }
-}
-
-/// Resolve physical button name from evdev keycode, supporting Factory, Sentinel, and AGY hardware presets.
+/// Resolve physical button name from evdev keycode using the two 16-unique-key hardware baselines:
+/// - Sentinel (`F13..F20` + Numpad) flashed automatically over BLE GATT (`80EL`)
+/// - Factory (`c..t`) out-of-the-box K-mode fallback (for un-flashed Micro or 8BitDo Zero 2)
 pub fn evdev_to_button(code: u16) -> Option<&'static str> {
-    factory_evdev_to_button(code)
-        .or_else(|| sentinel_evdev_to_button(code))
-        .or_else(|| agy_evdev_to_button(code))
+    sentinel_evdev_to_button(code).or_else(|| factory_evdev_to_button(code))
 }
 
 pub fn identify_hardware_profile_name(hw: &MicroHardwareProfile) -> &'static str {

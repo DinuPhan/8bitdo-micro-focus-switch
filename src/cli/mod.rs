@@ -8,8 +8,8 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::ble::{
-    format_snapshot_report, read_hardware_snapshot, scan_for_micro_ble_devices,
-    write_hardware_profile,
+    ensure_sentinel_baseline, format_snapshot_report, read_hardware_snapshot,
+    scan_for_micro_ble_devices, write_hardware_profile, write_raw_hardware_record,
 };
 use crate::config::{
     default_config_path, ensure_default_config, load_config, resolve_private_runtime_dir,
@@ -252,6 +252,19 @@ pub enum BleCommands {
 
     /// Backup current hardware profile and reset controller to factory K-mode default (c..t keys)
     Reset {
+        /// Optional BLE MAC address override
+        #[arg(long)]
+        address: Option<String>,
+        /// BLE scan timeout in seconds
+        #[arg(long, default_value_t = 6.0)]
+        timeout: f64,
+    },
+
+    /// Restore previously backed-up hardware profile from hardware-backup.bin (or custom binary file)
+    Restore {
+        /// Optional path to 180-byte record_micro binary file (defaults to ~/.config/8bitdo-micro/hardware-backup.bin)
+        #[arg(long)]
+        from_bin: Option<PathBuf>,
         /// Optional BLE MAC address override
         #[arg(long)]
         address: Option<String>,
@@ -952,12 +965,30 @@ async fn cmd_ble_write(
     let cfg_path = ensure_default_config(config)?;
     let cfg = load_config(Some(&cfg_path))?;
 
-    let prof = cfg.get_profile(profile_name)?;
-    let is_factory = matches!(
+    let (mut hw_prof, display_name, num_combos, num_exec) = if matches!(
         profile_name.trim().to_lowercase().as_str(),
-        "factory" | "default" | "reset"
-    );
-    let mut hw_prof = prof.to_hardware_profile(!is_factory)?;
+        "sentinel" | "host" | "factory" | "default" | "reset"
+    ) {
+        let preset = get_builtin_hardware_preset(profile_name)?;
+        (preset, profile_name.trim().to_lowercase(), 0, 0)
+    } else if let Ok(prof) = cfg.get_profile(profile_name) {
+        let is_factory = matches!(
+            profile_name.trim().to_lowercase().as_str(),
+            "factory" | "default" | "reset"
+        );
+        let hw = prof.to_hardware_profile(!is_factory)?;
+        let (nc, ne) = prof.software_only_features();
+        (hw, prof.name.clone(), nc, ne)
+    } else if let Ok(preset) = get_builtin_hardware_preset(profile_name) {
+        (preset, profile_name.trim().to_lowercase(), 0, 0)
+    } else {
+        return Err(format!(
+            "Profile {:?} not found in {} (and not a built-in preset like 'sentinel' or 'factory')",
+            profile_name,
+            cfg_path.display()
+        ));
+    };
+
     if let Some(t) = turn_override {
         hw_prof.turn = match t {
             0 => 0,
@@ -968,25 +999,52 @@ async fn cmd_ble_write(
         };
     }
 
-    let (num_combos, num_exec) = prof.software_only_features();
     if num_combos > 0 || num_exec > 0 {
         println!(
             "\n⚠️  Notice: Profile {:?} contains software-only features ({} combo(s), {} shell command(s)).\n\
              The 180-byte 8BitDo Micro hardware memory only supports 1-to-1 button mappings.\n\
              Combos and shell commands are handled by the daemon (uinput backend) and will not exist in hardware.\n",
-            prof.name, num_combos, num_exec
+            display_name, num_combos, num_exec
         );
     }
 
     println!(
         "Flashing profile {:?} (enabled={}, turn={}°) to '80EL' ...",
-        prof.name,
+        display_name,
         hw_prof.enabled,
         hw_prof.turn_degrees()
     );
     let snapshot = write_hardware_profile(&hw_prof, address, secs(timeout), true).await?;
     println!("Flash & Save complete! Verified hardware state:\n");
     println!("{}", format_snapshot_report(&snapshot));
+    Ok(0)
+}
+
+async fn cmd_ble_restore(
+    from_bin: Option<&Path>,
+    address: Option<&str>,
+    timeout: f64,
+) -> Result<i32, String> {
+    let default_backup = default_config_path()
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("hardware-backup.bin");
+    let backup_path = from_bin.unwrap_or(&default_backup);
+    if !backup_path.exists() {
+        return Err(format!(
+            "No hardware backup found at {}.",
+            backup_path.display()
+        ));
+    }
+    let raw_bytes = fs::read(backup_path)
+        .map_err(|e| format!("Failed to read {}: {}", backup_path.display(), e))?;
+    println!(
+        "Restoring 180-byte hardware profile from {} to '80EL' ...",
+        backup_path.display()
+    );
+    let after = write_raw_hardware_record(&raw_bytes, address, secs(timeout)).await?;
+    println!("Restore complete! Verified hardware state:\n");
+    println!("{}", format_snapshot_report(&after));
     Ok(0)
 }
 
@@ -1015,30 +1073,11 @@ async fn cmd_ble_reset(address: Option<&str>, timeout: f64) -> Result<i32, Strin
 async fn cmd_daemon(
     config: Option<&Path>,
     backend: Option<String>,
-    ensure_factory_ble: bool,
+    _ensure_factory_ble: bool,
     address: Option<String>,
 ) -> Result<i32, String> {
     let cfg_path = ensure_default_config(config)?;
     let cfg = load_config(Some(&cfg_path))?;
-
-    if ensure_factory_ble {
-        if let Ok(snap) = read_hardware_snapshot(address.as_deref(), Duration::from_secs(4)).await {
-            if snap.profile.enabled {
-                let backup_path = cfg_path
-                    .parent()
-                    .unwrap_or_else(|| Path::new("."))
-                    .join("hardware-backup.bin");
-                let _ = write_private_atomic(&backup_path, &snap.raw_record);
-                eprintln!(
-                    "[8bitdo-micro] Backed up custom hardware profile to {} and resetting controller to factory keys...",
-                    backup_path.display()
-                );
-                if let Ok(factory) = get_builtin_hardware_preset("factory") {
-                    let _ = write_hardware_profile(&factory, address.as_deref(), Duration::from_secs(4), true).await;
-                }
-            }
-        }
-    }
 
     let daemon = FocusSwitchDaemon::new(cfg, Some(cfg_path), backend, address);
     let (_stop_tx, stop_rx) = tokio::sync::watch::channel(false);
@@ -1501,7 +1540,7 @@ fn cmd_install_service(config: Option<&Path>, backend: Option<&str>) -> Result<i
     Ok(0)
 }
 
-fn cmd_setup(
+async fn cmd_setup(
     config: Option<&Path>,
     backend: Option<&str>,
     skip_udev: bool,
@@ -1525,6 +1564,35 @@ fn cmd_setup(
             println!("✓ /dev/uinput & controller evdev seat-scoped permissions: OK");
         } else {
             let _ = cmd_install_udev();
+        }
+    }
+
+    let backup_dir = cfg_path.parent();
+    match ensure_sentinel_baseline(None, Duration::from_secs(3), backup_dir).await {
+        Ok(report) => {
+            if let Some(ref bak) = report.backed_up_to {
+                println!(
+                    "✓ Backed up previous controller hardware profile ('{}') to {}",
+                    report.previous_profile,
+                    bak.display()
+                );
+            }
+            if report.flashed_sentinel {
+                println!(
+                    "✓ Flashed 'sentinel' 16-button baseline to controller ({}) over BLE (was '{}')",
+                    report.address, report.previous_profile
+                );
+            } else {
+                println!(
+                    "✓ Controller ({}) is already on 'sentinel' 16-button hardware baseline",
+                    report.address
+                );
+            }
+        }
+        Err(_) => {
+            println!(
+                "ℹ Controller BLE ('80EL') not active right now; daemon will auto-normalize to 'sentinel' on connect"
+            );
         }
     }
 
@@ -1679,6 +1747,11 @@ pub async fn run_cli_async(args: Vec<String>) -> i32 {
             BleCommands::Reset { address, timeout } => {
                 cmd_ble_reset(address.as_deref(), timeout).await
             }
+            BleCommands::Restore {
+                from_bin,
+                address,
+                timeout,
+            } => cmd_ble_restore(from_bin.as_deref(), address.as_deref(), timeout).await,
             BleCommands::Scan { timeout } => cmd_discover(timeout).await,
         },
         Some(Commands::Config {
@@ -1725,7 +1798,7 @@ pub async fn run_cli_async(args: Vec<String>) -> i32 {
             backend,
             skip_udev,
             skip_service,
-        }) => cmd_setup(config_ref, backend.as_deref(), skip_udev, skip_service),
+        }) => cmd_setup(config_ref, backend.as_deref(), skip_udev, skip_service).await,
         Some(Commands::InstallService { backend }) => {
             cmd_install_service(config_ref, backend.as_deref())
         }
