@@ -308,6 +308,13 @@ pub struct FocusSwitchDaemon {
     pub capture_factory_keys: bool,
 }
 
+pub fn resolve_cache_keypress_event_path() -> PathBuf {
+    get_home_dir()
+        .join(".cache")
+        .join("8bitdo-micro")
+        .join("last_keypress.json")
+}
+
 pub fn resolve_keypress_event_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         let trimmed = runtime_dir.trim();
@@ -317,10 +324,7 @@ pub fn resolve_keypress_event_path() -> PathBuf {
                 .join("last_keypress.json");
         }
     }
-    get_home_dir()
-        .join(".cache")
-        .join("8bitdo-micro")
-        .join("last_keypress.json")
+    resolve_cache_keypress_event_path()
 }
 
 impl FocusSwitchDaemon {
@@ -385,44 +389,51 @@ impl FocusSwitchDaemon {
         let Some(ref p) = self.keypress_event_path else {
             return;
         };
-        if let Some(parent) = p.parent() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
-                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
-            }
-            #[cfg(not(unix))]
-            {
-                let _ = fs::create_dir_all(parent);
-            }
+        let cache_p = resolve_cache_keypress_event_path();
+        let mut paths = vec![p.clone()];
+        if &cache_p != p {
+            paths.push(cache_p);
         }
-        if !p.exists() {
-            #[cfg(unix)]
-            {
-                use std::io::Write;
-                use std::os::unix::fs::OpenOptionsExt;
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(mut f) = fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .open(p)
+        for target in paths {
+            if let Some(parent) = target.parent() {
+                #[cfg(unix)]
                 {
-                    let _ = f.write_all(b"{\"seq\": 0}\n");
-                    let _ = fs::set_permissions(p, fs::Permissions::from_mode(0o600));
+                    use std::os::unix::fs::DirBuilderExt;
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::DirBuilder::new().recursive(true).mode(0o700).create(parent);
+                    let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = fs::create_dir_all(parent);
                 }
             }
-            #[cfg(not(unix))]
-            {
-                let _ = fs::write(p, "{\"seq\": 0}\n");
-            }
-        } else {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(p, fs::Permissions::from_mode(0o600));
+            if !target.exists() {
+                #[cfg(unix)]
+                {
+                    use std::io::Write;
+                    use std::os::unix::fs::OpenOptionsExt;
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(mut f) = fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .mode(0o600)
+                        .open(&target)
+                    {
+                        let _ = f.write_all(b"{\"seq\": 0}\n");
+                        let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o600));
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = fs::write(&target, "{\"seq\": 0}\n");
+                }
+            } else {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o600));
+                }
             }
         }
     }
@@ -527,6 +538,10 @@ impl FocusSwitchDaemon {
         if let Ok(mut s) = serde_json::to_string(&payload) {
             s.push('\n');
             self.write_event_file_in_place(path, s.as_bytes());
+            let cache_p = resolve_cache_keypress_event_path();
+            if &cache_p != path {
+                self.write_event_file_in_place(&cache_p, s.as_bytes());
+            }
         }
     }
 
