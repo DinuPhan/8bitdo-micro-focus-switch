@@ -132,7 +132,7 @@ Các gói cài đặt sẵn cho Linux (`.AppImage`, `.deb`) có sẵn tại mụ
 Nhấn phím không nên giống như một bài kiểm tra trí nhớ. Bạn có thể bật sơ đồ layout phím đang dùng bất cứ lúc nào:
 
 <p align="center">
-  <img src="assets/keymap_diagram.svg" alt="Sơ đồ phím trực quan HUD" width="700" />
+  <img src="assets/keymap_diagram.gif" alt="Sơ đồ phím trực quan HUD" width="700" />
 </p>
 
 ```bash

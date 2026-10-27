@@ -133,7 +133,7 @@ Pre-built Linux packages (`.AppImage`, `.deb`) are available on [Releases](https
 Pressing buttons shouldn't feel like a memory test. You can display your active keymap at any time:
 
 <p align="center">
-  <img src="assets/keymap_diagram.svg" alt="Visual Keymap Diagram HUD" width="700" />
+  <img src="assets/keymap_diagram.gif" alt="Visual Keymap Diagram HUD" width="700" />
 </p>
 
 ```bash
