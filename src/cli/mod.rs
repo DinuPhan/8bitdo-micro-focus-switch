@@ -27,8 +27,8 @@ use crate::window_watcher::{find_hyprland_socket2, query_active_window};
 
 pub const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/99-8bitdo-micro-uinput.rules";
 pub const UDEV_RULE_CONTENT: &str = concat!(
-    "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", MODE=\"0660\", TAG+=\"uaccess\", OPTIONS+=\"static_node=uinput\"\n",
-    "KERNEL==\"event*\", SUBSYSTEM==\"input\", ATTRS{id/vendor}==\"2dc8\", MODE=\"0660\", TAG+=\"uaccess\"\n"
+    "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", GROUP=\"input\", MODE=\"0660\", TAG+=\"uaccess\", OPTIONS+=\"static_node=uinput\"\n",
+    "KERNEL==\"event*\", SUBSYSTEM==\"input\", ATTRS{id/vendor}==\"2dc8\", GROUP=\"input\", MODE=\"0660\", TAG+=\"uaccess\"\n"
 );
 pub const MODULES_LOAD_PATH: &str = "/etc/modules-load.d/99-8bitdo-micro-uinput.conf";
 
@@ -37,6 +37,7 @@ pub fn is_udev_rule_secure_and_current(content: &str) -> bool {
         && !content.contains("ATTRS{name}==\"8BitDo*\"")
         && content.contains("KERNEL==\"uinput\"")
         && content.contains("ATTRS{id/vendor}==\"2dc8\"")
+        && content.contains("GROUP=\"input\"")
         && content.contains("MODE=\"0660\"")
         && content.contains("TAG+=\"uaccess\"")
 }
@@ -1448,7 +1449,7 @@ fn cmd_install_udev() -> Result<i32, String> {
     );
     let backup_path = format!("{}.bak", UDEV_RULE_PATH);
     let cmd = format!(
-        "if [ -f {path} ]; then sudo cp -p {path} {bak}; fi && printf '%s\\n' '{rule}' | sudo tee {path} > /dev/null && echo 'uinput' | sudo tee {modpath} > /dev/null && sudo modprobe uinput && if [ -e /dev/uinput ]; then sudo chmod 0660 /dev/uinput; fi && sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput && sudo udevadm trigger --subsystem-match=input",
+        "if [ -f {path} ]; then sudo cp -p {path} {bak}; fi && printf '%s\\n' '{rule}' | sudo tee {path} > /dev/null && echo 'uinput' | sudo tee {modpath} > /dev/null && sudo modprobe uinput && if [ -e /dev/uinput ]; then sudo chgrp input /dev/uinput && sudo chmod 0660 /dev/uinput; fi && sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput && sudo udevadm trigger --subsystem-match=input",
         path = UDEV_RULE_PATH,
         bak = backup_path,
         rule = UDEV_RULE_CONTENT.trim(),
@@ -1456,7 +1457,7 @@ fn cmd_install_udev() -> Result<i32, String> {
     );
     if let Ok(status) = Command::new("sudo").args(["sh", "-c", &cmd]).status() {
         if status.success() {
-            println!("✓ Configured seat-scoped uaccess permissions (MODE=0660, TAG+=uaccess) and enabled uinput module!");
+            println!("✓ Configured seat-scoped uaccess permissions (MODE=0660, GROUP=input, TAG+=uaccess) and enabled uinput module!");
             return Ok(0);
         }
     }
@@ -1468,7 +1469,7 @@ fn cmd_install_udev() -> Result<i32, String> {
         UDEV_RULE_PATH
     );
     println!(
-        "  echo 'uinput' | sudo tee {} && sudo modprobe uinput && sudo chmod 0660 /dev/uinput",
+        "  echo 'uinput' | sudo tee {} && sudo modprobe uinput && sudo chgrp input /dev/uinput && sudo chmod 0660 /dev/uinput",
         MODULES_LOAD_PATH
     );
     println!("  sudo udevadm control --reload-rules && sudo udevadm trigger --sysname-match=uinput && sudo udevadm trigger --subsystem-match=input");

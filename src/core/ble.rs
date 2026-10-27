@@ -50,6 +50,14 @@ async fn get_default_adapter() -> Result<Adapter, String> {
         .ok_or_else(|| "No Bluetooth adapter found on this system.".to_string())
 }
 
+pub fn is_micro_ble_name(name: &str) -> bool {
+    let lower = name.trim().to_lowercase();
+    lower == BLE_DEVICE_NAME.to_lowercase()
+        || lower.contains("80el")
+        || lower.contains("8bitdo micro")
+        || lower.contains("8bitdo zero")
+}
+
 pub async fn scan_for_micro_ble_devices(
     timeout: Duration,
 ) -> Result<Vec<DiscoveredMicroBle>, String> {
@@ -71,7 +79,7 @@ pub async fn scan_for_micro_ble_devices(
     for p in peripherals {
         if let Ok(Some(props)) = p.properties().await {
             let name = props.local_name.unwrap_or_default();
-            if name.trim().eq_ignore_ascii_case(BLE_DEVICE_NAME) {
+            if is_micro_ble_name(&name) {
                 found.push(DiscoveredMicroBle {
                     name,
                     address: p.address().to_string(),
@@ -124,7 +132,7 @@ pub async fn find_micro_ble_device(
                             peripheral: p,
                         });
                     }
-                } else if name.trim().eq_ignore_ascii_case(BLE_DEVICE_NAME) {
+                } else if is_micro_ble_name(&name) {
                     let _ = adapter.stop_scan().await;
                     return Ok(DiscoveredMicroBle {
                         name,

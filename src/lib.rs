@@ -776,6 +776,7 @@ buttons.A = "SPACE"
         assert!(!cli::UDEV_RULE_CONTENT.contains("0666"));
         assert!(!cli::UDEV_RULE_CONTENT.contains("8BitDo*"));
         assert!(cli::UDEV_RULE_CONTENT.contains("MODE=\"0660\""));
+        assert!(cli::UDEV_RULE_CONTENT.contains("GROUP=\"input\""));
         assert!(cli::UDEV_RULE_CONTENT.contains("TAG+=\"uaccess\""));
         assert!(cli::UDEV_RULE_CONTENT.contains("ATTRS{id/vendor}==\"2dc8\""));
         assert!(cli::is_udev_rule_secure_and_current(cli::UDEV_RULE_CONTENT));
@@ -783,7 +784,10 @@ buttons.A = "SPACE"
         let legacy_rule = "KERNEL==\"uinput\", MODE=\"0666\", GROUP=\"input\", OPTIONS+=\"static_node=uinput\"\n";
         assert!(!cli::is_udev_rule_secure_and_current(legacy_rule));
 
-        let wildcard_name_rule = "KERNEL==\"uinput\", MODE=\"0660\", TAG+=\"uaccess\"\nATTRS{name}==\"8BitDo*\", MODE=\"0660\", TAG+=\"uaccess\"\n";
+        let missing_group_rule = "KERNEL==\"uinput\", MODE=\"0660\", TAG+=\"uaccess\", ATTRS{id/vendor}==\"2dc8\"\n";
+        assert!(!cli::is_udev_rule_secure_and_current(missing_group_rule));
+
+        let wildcard_name_rule = "KERNEL==\"uinput\", GROUP=\"input\", MODE=\"0660\", TAG+=\"uaccess\"\nATTRS{name}==\"8BitDo*\", MODE=\"0660\", TAG+=\"uaccess\"\n";
         assert!(!cli::is_udev_rule_secure_and_current(wildcard_name_rule));
     }
 
