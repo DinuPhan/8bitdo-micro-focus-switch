@@ -910,14 +910,17 @@ impl FocusSwitchDaemon {
                 .as_ref()
                 .and_then(|p| p.parent().map(|d| d.to_path_buf()));
             tokio::spawn(async move {
-                // Initial normalization check on daemon startup
-                normalize_controller_to_sentinel_if_needed(
-                    ble_addr.as_deref(),
-                    backup_dir.as_deref(),
-                )
-                .await;
+                let mut last_attempt: Option<std::time::Instant> = None;
                 while ble_probe_rx.recv().await.is_some() {
-                    tokio::time::sleep(Duration::from_millis(600)).await;
+                    if let Some(prev) = last_attempt {
+                        if prev.elapsed() < Duration::from_secs(30) {
+                            continue;
+                        }
+                    }
+                    last_attempt = Some(std::time::Instant::now());
+                    println!(
+                        "[8bitdo-micro] Detected non-baseline hardware keymap on controller; normalizing to 'sentinel' over BLE ('80EL')..."
+                    );
                     normalize_controller_to_sentinel_if_needed(
                         ble_addr.as_deref(),
                         backup_dir.as_deref(),
@@ -931,7 +934,6 @@ impl FocusSwitchDaemon {
         #[cfg(target_os = "linux")]
         if self.backend == "uinput" || self.backend == "host" || self.backend == "hybrid" {
             let key_tx_linux = key_tx.clone();
-            let ble_probe_tx_linux = ble_probe_tx.clone();
             let mut stop_linux = stop_rx.clone();
             tokio::spawn(async move {
                 loop {
@@ -980,7 +982,6 @@ impl FocusSwitchDaemon {
                             "[8bitdo-micro] Successfully grabbed exclusive access to {:?}",
                             path
                         );
-                        let _ = ble_probe_tx_linux.try_send(());
                     }
 
                     match dev.into_event_stream() {
@@ -1112,6 +1113,9 @@ impl FocusSwitchDaemon {
                     self.on_focus_change(win);
                 }
                 Some((code, val)) = key_rx.recv() => {
+                    if val == 1 && self.resolve_button_name(code).is_none() {
+                        let _ = ble_probe_tx.try_send(());
+                    }
                     self.handle_key_event_with_mode(ui.as_mut(), code, val, true);
                 }
                 _ = combo_tick.tick() => {

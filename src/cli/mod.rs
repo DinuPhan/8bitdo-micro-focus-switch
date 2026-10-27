@@ -580,8 +580,9 @@ fn write_systemd_service_unit(
     cfg_path: &Path,
     backend: Option<&str>,
 ) -> Result<PathBuf, String> {
-    let exe = which_binary("8bitdo-micro-focus-switch")
-        .or_else(|| std::env::current_exe().ok())
+    let exe = std::env::current_exe()
+        .ok()
+        .or_else(|| which_binary("8bitdo-micro-focus-switch"))
         .unwrap_or_else(|| PathBuf::from("8bitdo-micro-focus-switch"));
     let home = std::env::var("HOME")
         .map(PathBuf::from)
