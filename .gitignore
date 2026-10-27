@@ -7,7 +7,6 @@ gen/
 
 # Frontend Web artifacts
 frontend/node_modules/
-frontend/dist/
 
 # OS / Editor files
 .DS_Store
