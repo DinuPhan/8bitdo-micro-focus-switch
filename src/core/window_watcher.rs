@@ -36,30 +36,45 @@ pub fn find_hyprland_socket2() -> Option<PathBuf> {
             .ok()
             .filter(|s| !s.is_empty() && !s.contains('/') && !s.contains('\\') && !s.contains(".."));
         let xdg_runtime = std::env::var("XDG_RUNTIME_DIR")
-            .unwrap_or_else(|_| format!("/run/user/{}", my_uid));
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| format!("/run/user/{}", my_uid));
+
+        let is_valid_owned_dir = |p: &std::path::Path| -> bool {
+            std::fs::symlink_metadata(p)
+                .map(|m| m.file_type().is_dir() && m.uid() == my_uid && (m.mode() & 0o022) == 0)
+                .unwrap_or(false)
+        };
+
+        if !is_valid_owned_dir(std::path::Path::new(&xdg_runtime)) {
+            return None;
+        }
 
         let is_valid_owned_socket = |p: &std::path::Path| -> Option<std::time::SystemTime> {
             let meta = std::fs::symlink_metadata(p).ok()?;
             if !meta.file_type().is_socket() || meta.uid() != my_uid {
                 return None;
             }
-            if let Some(parent) = p.parent() {
-                let p_meta = std::fs::symlink_metadata(parent).ok()?;
-                if !p_meta.is_dir() || p_meta.uid() != my_uid {
+            let parent = p.parent()?;
+            if !is_valid_owned_dir(parent) {
+                return None;
+            }
+            if let Some(grandparent) = parent.parent() {
+                if !is_valid_owned_dir(grandparent) {
                     return None;
                 }
             }
             Some(meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH))
         };
 
+        let hypr_base = PathBuf::from(&xdg_runtime).join("hypr");
         let mut candidates = Vec::new();
         if let Some(ref s) = sig {
-            candidates.push(PathBuf::from(&xdg_runtime).join("hypr").join(s).join(".socket2.sock"));
-            candidates.push(PathBuf::from("/tmp/hypr").join(s).join(".socket2.sock"));
+            candidates.push(hypr_base.join(s).join(".socket2.sock"));
         }
 
-        for base in [PathBuf::from(&xdg_runtime).join("hypr"), PathBuf::from("/tmp/hypr")] {
-            if let Ok(entries) = std::fs::read_dir(&base) {
+        if is_valid_owned_dir(&hypr_base) {
+            if let Ok(entries) = std::fs::read_dir(&hypr_base) {
                 let mut sock_files: Vec<(std::time::SystemTime, PathBuf)> = entries
                     .flatten()
                     .map(|e| e.path().join(".socket2.sock"))

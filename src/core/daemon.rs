@@ -579,11 +579,13 @@ impl FocusSwitchDaemon {
         let cmd_str = cmd.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                let mut env_path = std::env::var("PATH").unwrap_or_default();
+                let mut path_entries: Vec<PathBuf> = std::env::var_os("PATH")
+                    .map(|p| std::env::split_paths(&p).filter(|d| !d.as_os_str().is_empty()).collect())
+                    .unwrap_or_default();
                 let home_local = get_home_dir().join(".local").join("bin");
-                for extra in ["/usr/share/omarchy/bin", home_local.to_str().unwrap_or("")] {
-                    if !extra.is_empty() && Path::new(extra).is_dir() && !env_path.contains(extra) {
-                        env_path = format!("{}:{}", extra, env_path);
+                for extra in [PathBuf::from("/usr/share/omarchy/bin"), home_local] {
+                    if extra.is_dir() && !path_entries.iter().any(|p| p == &extra) {
+                        path_entries.insert(0, extra);
                     }
                 }
 
@@ -597,11 +599,56 @@ impl FocusSwitchDaemon {
                 #[cfg(not(target_os = "windows"))]
                 child.args(["-c", &cmd_str]);
 
-                child.env("PATH", env_path);
+                if let Ok(joined_path) = std::env::join_paths(&path_entries) {
+                    child.env("PATH", joined_path);
+                }
                 if std::env::var_os("OMARCHY_PATH").is_none()
                     && Path::new("/usr/share/omarchy").is_dir()
                 {
                     child.env("OMARCHY_PATH", "/usr/share/omarchy");
+                }
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+
+                    if std::env::var_os("WAYLAND_DISPLAY").is_none() {
+                        let my_uid = unsafe { libc::getuid() };
+                        let xdg = std::env::var("XDG_RUNTIME_DIR")
+                            .ok()
+                            .filter(|s| !s.trim().is_empty())
+                            .unwrap_or_else(|| format!("/run/user/{}", my_uid));
+                        let xdg_valid = std::fs::symlink_metadata(&xdg)
+                            .map(|m| m.file_type().is_dir() && m.uid() == my_uid && (m.mode() & 0o022) == 0)
+                            .unwrap_or(false);
+                        if xdg_valid {
+                            for cand in ["wayland-1", "wayland-0", "wayland-2"] {
+                                let sock_path = Path::new(&xdg).join(cand);
+                                let is_owned_sock = std::fs::symlink_metadata(&sock_path)
+                                    .map(|m| m.file_type().is_socket() && m.uid() == my_uid)
+                                    .unwrap_or(false);
+                                if is_owned_sock {
+                                    child.env("WAYLAND_DISPLAY", cand);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() {
+                        if let Some(sock) = crate::window_watcher::find_hyprland_socket2() {
+                            if let Some(sig) = sock
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .and_then(|s| s.to_str())
+                                .filter(|s| !s.is_empty() && !s.contains('/') && !s.contains('\\') && !s.contains(".."))
+                            {
+                                child.env("HYPRLAND_INSTANCE_SIGNATURE", sig);
+                            }
+                        }
+                    }
+                    if std::env::var_os("XDG_CURRENT_DESKTOP").is_none() {
+                        child.env("XDG_CURRENT_DESKTOP", "Hyprland");
+                    }
                 }
                 let _ = child.output().await;
             });
