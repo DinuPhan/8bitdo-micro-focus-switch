@@ -70,6 +70,8 @@ jobs:
     needs: create-release
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -135,29 +137,66 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Archive and Upload Standalone CLI Binary (Unix)
+      - name: Archive Standalone CLI Binary (Unix)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          BIN_PATH="target/release/8bitdo-micro-focus-switch"
+          if [ -n "${{ matrix.target }}" ]; then
+            BIN_PATH="target/${{ matrix.target }}/release/8bitdo-micro-focus-switch"
+          fi
+          if [ ! -f "$BIN_PATH" ]; then
+            echo "::error::Binary not found at $BIN_PATH"
+            exit 1
+          fi
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          touch -d "@$SOURCE_DATE_EPOCH" "$BIN_PATH" 2>/dev/null || true
+          if tar --version 2>/dev/null | grep -q "GNU tar"; then
+            tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -cf - -C "$(dirname "$BIN_PATH")" "$(basename "$BIN_PATH")" | gzip -n > "${{ matrix.artifact_name }}"
+          else
+            tar -cf - -C "$(dirname "$BIN_PATH")" "$(basename "$BIN_PATH")" | gzip -n > "${{ matrix.artifact_name }}"
+          fi
+          sha256sum "${{ matrix.artifact_name }}" > "${{ matrix.artifact_name }}.sha256" || shasum -a 256 "${{ matrix.artifact_name }}" > "${{ matrix.artifact_name }}.sha256"
+
+      - name: Attest Build Provenance (Unix)
+        if: matrix.platform != 'windows-latest'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            ${{ matrix.artifact_name }}
+            ${{ matrix.artifact_name }}.sha256
+
+      - name: Upload Standalone CLI Binary (Unix)
         if: matrix.platform != 'windows-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TARGET_TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          BIN_PATH="target/release/8bitdo-micro-focus-switch"
-          if [ -n "${{ matrix.target }}" ]; then
-            BIN_PATH="target/${{ matrix.target }}/release/8bitdo-micro-focus-switch"
-          fi
-          if [ -f "$BIN_PATH" ]; then
-            tar -czvf "${{ matrix.artifact_name }}" -C "$(dirname "$BIN_PATH")" "$(basename "$BIN_PATH")"
-            gh release upload "$TARGET_TAG" "${{ matrix.artifact_name }}" --clobber
+          if [ -f "${{ matrix.artifact_name }}" ]; then
+            gh release upload "$TARGET_TAG" "${{ matrix.artifact_name }}" "${{ matrix.artifact_name }}.sha256"
           fi
 
-      - name: Archive and Upload Standalone CLI Binary (Windows)
+      - name: Archive Standalone CLI Binary (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          $BinPath = "target\release\8bitdo-micro-focus-switch.exe"
+          if (-not (Test-Path $BinPath)) {
+            Write-Error "Binary not found at $BinPath"
+            exit 1
+          }
+          Compress-Archive -Path $BinPath -DestinationPath "${{ matrix.artifact_name }}" -Force
+
+      - name: Attest Build Provenance (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ matrix.artifact_name }}
+
+      - name: Upload Standalone CLI Binary (Windows)
         if: matrix.platform == 'windows-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $TargetTag = if ("${{ github.event.inputs.tag }}") { "${{ github.event.inputs.tag }}" } else { "${{ github.ref_name }}" }
-          $BinPath = "target\release\8bitdo-micro-focus-switch.exe"
-          if (Test-Path $BinPath) {
-            Compress-Archive -Path $BinPath -DestinationPath "${{ matrix.artifact_name }}" -Force
-            gh release upload $TargetTag "${{ matrix.artifact_name }}" --clobber
+          if (Test-Path "${{ matrix.artifact_name }}") {
+            gh release upload $TargetTag "${{ matrix.artifact_name }}"
           }
